@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, Image,
   Modal, ScrollView, TextInput, Alert, Dimensions,
@@ -7,6 +7,7 @@ import { Radius, Spacing } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import UploadModal from '../components/UploadModal';
+import * as API from '../api';
 
 const { width } = Dimensions.get('window');
 const CARD = (width - 48) / 2;
@@ -365,18 +366,43 @@ function PhotoCard({ photo, onPress, colors }) {
 export default function MyPhotosScreen() {
   const { session } = useAuth();
   const { colors } = useTheme();
-  const [photos, setPhotos] = useState(MOCK_MY_PHOTOS);
+  const [photos, setPhotos] = useState([]);
+  const [knownUsers, setKnownUsers] = useState(
+    KNOWN_USERS.map((u, i) => ({ user_id: `u${i + 2}`, username: u, display: u.split('_')[0] }))
+  );
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
 
-  const handleDelete = (imageId) => setPhotos(p => p.filter(x => x.image_id !== imageId));
+  useEffect(() => {
+    if (session.isDemo) {
+      setPhotos(MOCK_MY_PHOTOS);
+      return;
+    }
+    Promise.all([
+      API.fetchMyPhotos(session.token),
+      API.fetchUsers(session.token),
+    ]).then(([{ photos: p }, { users }]) => {
+      setPhotos(p);
+      setKnownUsers(users);
+    }).catch(() => setPhotos(MOCK_MY_PHOTOS));
+  }, []);
 
-  const handleUpdateAuthorized = (imageId, authorized) =>
+  const handleDelete = (imageId) => {
+    setPhotos(p => p.filter(x => x.image_id !== imageId));
+    if (!session.isDemo) API.deletePhoto(session.token, imageId).catch(() => {});
+  };
+
+  const handleUpdateAuthorized = (imageId, authorized) => {
     setPhotos(p => p.map(x => x.image_id === imageId ? { ...x, authorized } : x));
+    if (!session.isDemo) API.authorizePhoto(session.token, imageId, authorized).catch(() => {});
+  };
 
   const handleToggleBlock = (imageId) => {
-    setPhotos(p => p.map(x => x.image_id === imageId ? { ...x, blocked: !x.blocked } : x));
-    setSelected(s => s ? { ...s, blocked: !s.blocked } : s);
+    const current = photos.find(x => x.image_id === imageId);
+    const newBlocked = !(current?.blocked ?? false);
+    setPhotos(p => p.map(x => x.image_id === imageId ? { ...x, blocked: newBlocked } : x));
+    setSelected(s => s ? { ...s, blocked: newBlocked } : s);
+    if (!session.isDemo) API.setPhotoBlocked(session.token, imageId, newBlocked).catch(() => {});
   };
 
   return (
@@ -454,7 +480,7 @@ export default function MyPhotosScreen() {
           }, ...prev]);
           setShowUpload(false);
         }}
-        users={KNOWN_USERS.map((u, i) => ({ user_id: `u${i+2}`, username: u, display: u.split('_')[0] }))}
+        users={knownUsers}
       />
     </View>
   );

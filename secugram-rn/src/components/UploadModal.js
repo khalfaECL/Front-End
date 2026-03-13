@@ -53,17 +53,24 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
   const handleUpload = async () => {
     setError('');
     setStep(STEPS.UPLOADING);
-    const imageId = `img_${Date.now()}`;
     const progressInterval = setInterval(() => {
       setProgress(p => Math.min(p + 8, 90));
     }, 200);
     try {
+      let imageId;
       if (session.isDemo) {
         // Mode démo : simulation locale, pas d'appel API
         await new Promise(r => setTimeout(r, 1800));
+        imageId = `demo_${Date.now()}`;
       } else {
-        await API.uploadPhoto(session.token, { imageData: image.base64, imageId, description: desc });
-        if (selected.length > 0) await API.authorizePhoto(session.token, imageId, selected);
+        const result = await API.uploadPhoto(session.token, {
+          imageData:         image.base64,
+          description:       desc,
+          authorizedUsers:   selected,
+          ephemeralDuration,
+          maxViews,
+        });
+        imageId = result.image_id;
       }
       clearInterval(progressInterval);
       setProgress(100);

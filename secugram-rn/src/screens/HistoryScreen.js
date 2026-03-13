@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Image } from 'react-native';
 import { Radius, Spacing } from '../theme';
 import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../hooks/useAuth';
+import * as API from '../api';
 
 // Accès à mes images
 const MOCK_MY_IMAGE_ACCESSES = [
@@ -67,10 +69,24 @@ function TypeBadge({ type, colors }) {
 }
 
 export default function HistoryScreen() {
+  const { session } = useAuth();
   const { colors } = useTheme();
   const [tab, setTab] = useState('my_images');
+  const [myImageAccesses, setMyImageAccesses] = useState(MOCK_MY_IMAGE_ACCESSES);
+  const [myAccesses, setMyAccesses] = useState(MOCK_MY_ACCESSES);
 
-  const data = tab === 'my_images' ? MOCK_MY_IMAGE_ACCESSES : MOCK_MY_ACCESSES;
+  useEffect(() => {
+    if (session.isDemo) return;
+    Promise.all([
+      API.fetchMyImageHistory(session.token),
+      API.fetchMyAccesses(session.token),
+    ]).then(([{ accesses: imageAcc }, { accesses: myAcc }]) => {
+      setMyImageAccesses(imageAcc);
+      setMyAccesses(myAcc);
+    }).catch(() => {});
+  }, []);
+
+  const data = tab === 'my_images' ? myImageAccesses : myAccesses;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

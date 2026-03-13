@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, Image, Modal, Animated,
+  View, Text, FlatList, TouchableOpacity, Image, Modal, Animated, Alert,
 } from 'react-native';
 import { Radius, Spacing } from '../theme';
 import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../hooks/useAuth';
+import * as API from '../api';
 
 const MOCK_SHARED = [
   {
@@ -220,12 +222,23 @@ function InfoModal({ photo, onClose, onAccess, colors, accessStatus }) {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function SharedScreen() {
+  const { session } = useAuth();
   const { colors, viewCooldown } = useTheme();
-  const [photos]       = useState(MOCK_SHARED);
+  const [photos, setPhotos]         = useState([]);
   const [selected, setSelected]     = useState(null);
   const [viewing,  setViewing]      = useState(null);
   const [viewCount,    setViewCount]    = useState({});   // { imageId: number }
   const [lastViewedAt, setLastViewedAt] = useState({});   // { imageId: timestamp }
+
+  useEffect(() => {
+    if (session.isDemo) {
+      setPhotos(MOCK_SHARED);
+      return;
+    }
+    API.fetchSharedPhotos(session.token)
+      .then(({ photos: p }) => setPhotos(p))
+      .catch(() => setPhotos(MOCK_SHARED));
+  }, []);
 
   const getAccessStatus = (item) => {
     if (item.blocked) return { ok: false, reason: 'blocked' };
@@ -243,12 +256,23 @@ export default function SharedScreen() {
     return { ok: true, count, max: item.maxViews };
   };
 
-  const handleAccess = () => {
-    const id = selected.image_id;
-    setViewCount(c => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
-    setLastViewedAt(t => ({ ...t, [id]: Date.now() }));
-    setViewing(selected);
-    setSelected(null);
+  const handleAccess = async () => {
+    const item = selected;
+    const id = item.image_id;
+    try {
+      let viewingPhoto = { ...item };
+      if (!session.isDemo) {
+        const { signed_url } = await API.recordAccess(session.token, id);
+        viewingPhoto = { ...item, preview_uri: signed_url };
+      }
+      setViewCount(c => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+      setLastViewedAt(t => ({ ...t, [id]: Date.now() }));
+      setViewing(viewingPhoto);
+      setSelected(null);
+    } catch (e) {
+      setSelected(null);
+      Alert.alert('Accès refusé', e.message || "Impossible d'accéder à cette image.");
+    }
   };
 
   return (
