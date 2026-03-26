@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Développement du Front-end — Secugram</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1280px; height: 720px; overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    background: #0a0a14;
+    color: #f0f0f8;
+    display: flex; align-items: stretch;
+  }
+
+  /* ── Bande latérale gauche ── */
+  .sidebar {
+    width: 6px;
+    background: linear-gradient(180deg, #ff6b00, #ff9a3c);
+    flex-shrink: 0;
+  }
+
+  /* ── Contenu principal ── */
+  .slide {
+    flex: 1;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    padding: 48px 56px 40px;
+    gap: 32px;
+  }
+
+  /* ── En-tête ── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .title-block { display: flex; flex-direction: column; gap: 6px; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,107,0,0.12);
+    border: 1px solid rgba(255,107,0,0.3);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 11px; font-weight: 600; letter-spacing: 2px;
+    color: #ff6b00; font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    width: fit-content;
+  }
+
+  h1 {
+    font-size: 38px; font-weight: 800; letter-spacing: -0.5px;
+    color: #ffffff; line-height: 1.1;
+  }
+  h1 span { color: #ff6b00; }
+
+  .author {
+    font-size: 13px; color: rgba(255,255,255,0.45);
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 1px;
+  }
+
+  /* Logo React Native + JS */
+  .tech-logos {
+    display: flex; gap: 14px; align-items: center;
+  }
+  .logo-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 8px 16px;
+  }
+  .logo-pill svg { width: 28px; height: 28px; }
+  .logo-pill span { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); }
+
+  /* ── Corps ── */
+  .body {
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    gap: 0;
+  }
+
+  .divider { background: rgba(255,255,255,0.08); }
+
+  /* Colonne gauche */
+  .col-left { padding-right: 48px; display: flex; flex-direction: column; gap: 20px; }
+  /* Colonne droite */
+  .col-right { padding-left: 48px; display: flex; flex-direction: column; gap: 14px; justify-content: center; }
+
+  .col-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 2.5px;
+    color: #ff6b00; font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase; margin-bottom: 4px;
+  }
+
+  /* Feature items */
+  .feature {
+    display: flex; gap: 16px; align-items: flex-start;
+  }
+  .feature-icon {
+    width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+  }
+  .feature-icon.orange { background: rgba(255,107,0,0.14); border: 1px solid rgba(255,107,0,0.25); }
+  .feature-icon.blue   { background: rgba(0,153,255,0.12); border: 1px solid rgba(0,153,255,0.2); }
+  .feature-icon.green  { background: rgba(48,209,88,0.1);  border: 1px solid rgba(48,209,88,0.2); }
+
+  .feature-text { flex: 1; }
+  .feature-title { font-size: 13.5px; font-weight: 700; color: #fff; margin-bottom: 3px; }
+  .feature-desc  { font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.55; }
+
+  /* Right column — fonctionnalités */
+  .func-item {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 11px 16px;
+  }
+  .func-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    background: #ff6b00;
+  }
+  .func-dot.cyan  { background: #00cfff; }
+  .func-dot.green { background: #30d158; }
+  .func-dot.white { background: rgba(255,255,255,0.4); }
+  .func-text { font-size: 13px; color: rgba(255,255,255,0.75); font-weight: 500; }
+
+  /* Footer */
+  .footer {
+    position: absolute; bottom: 26px; right: 56px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .footer-brand {
+    font-size: 11px; font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 2.5px; color: rgba(255,255,255,0.2); font-weight: 600;
+  }
+  .footer-sep { width: 1px; height: 14px; background: rgba(255,255,255,0.1); }
+  .footer-page { font-size: 11px; color: rgba(255,255,255,0.15); font-family: 'JetBrains Mono', monospace; }
+</style>
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="slide">
+
+  <!-- En-tête -->
+  <div class="header">
+    <div class="title-block">
+      <div class="badge">Dev Mobile</div>
+      <h1>Développement du <span>Front-end</span></h1>
+      <div class="author">Amani KRID</div>
+    </div>
+
+    <div class="tech-logos">
+      <!-- React Native -->
+      <div class="logo-pill">
+        <svg viewBox="0 0 100 100" fill="none">
+          <circle cx="50" cy="50" r="10" fill="#61DAFB"/>
+          <ellipse cx="50" cy="50" rx="45" ry="17" stroke="#61DAFB" stroke-width="5" fill="none"/>
+          <ellipse cx="50" cy="50" rx="45" ry="17" stroke="#61DAFB" stroke-width="5" fill="none" transform="rotate(60 50 50)"/>
+          <ellipse cx="50" cy="50" rx="45" ry="17" stroke="#61DAFB" stroke-width="5" fill="none" transform="rotate(120 50 50)"/>
+        </svg>
+        <span>React Native</span>
+      </div>
+      <!-- JavaScript -->
+      <div class="logo-pill">
+        <svg viewBox="0 0 100 100">
+          <rect width="100" height="100" rx="12" fill="#F7DF1E"/>
+          <text x="14" y="82" font-family="Arial Black" font-size="62" font-weight="900" fill="#000">JS</text>
+        </svg>
+        <span>JavaScript 17</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Corps -->
+  <div class="body">
+
+    <!-- Colonne gauche : caractéristiques techniques -->
+    <div class="col-left">
+      <div class="col-label">Caractéristiques techniques</div>
+
+      <div class="feature">
+        <div class="feature-icon orange">📱</div>
+        <div class="feature-text">
+          <div class="feature-title">Cross-plateforme</div>
+          <div class="feature-desc">React Native 0.76 — une seule base de code, déployable sur Android &amp; iOS.</div>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon blue">⚙️</div>
+        <div class="feature-text">
+          <div class="feature-title">Compatibilité Android</div>
+          <div class="feature-desc">JS 17, compatible Android 5 → 14 (API 21+). Build optimisé via Gradle.</div>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon green">🛡</div>
+        <div class="feature-text">
+          <div class="feature-title">Interface sécurisée native</div>
+          <div class="feature-desc">
+            Blocage des captures d'écran (FLAG_SECURE) · Affichage éphémère des images ·
+            Masquage AES-256 pour les utilisateurs non autorisés.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Colonne droite : fonctionnalités -->
+    <div class="col-right">
+      <div class="col-label">Fonctionnalités implémentées</div>
+
+      <div class="func-item">
+        <div class="func-dot"></div>
+        <div class="func-text">Formulaires d'inscription &amp; connexion sécurisée (JWT)</div>
+      </div>
+      <div class="func-item">
+        <div class="func-dot cyan"></div>
+        <div class="func-text">Dépôt &amp; chiffrement d'images (AES-256)</div>
+      </div>
+      <div class="func-item">
+        <div class="func-dot green"></div>
+        <div class="func-text">Accord &amp; révocation des autorisations d'accès</div>
+      </div>
+      <div class="func-item">
+        <div class="func-dot orange" style="background:#ff6b00"></div>
+        <div class="func-text">Feed public avec déchiffrement éphémère</div>
+      </div>
+      <div class="func-item">
+        <div class="func-dot white"></div>
+        <div class="func-text">Historique d'accès &amp; détection de filigrane DCT</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="footer-brand">SECUGRAM</div>
+  <div class="footer-sep"></div>
+  <div class="footer-page">Front-end</div>
+</div>
+
+</body>
+</html>

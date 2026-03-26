@@ -72,20 +72,20 @@ export default function HistoryScreen() {
   const { session } = useAuth();
   const { colors } = useTheme();
   const [tab, setTab] = useState('my_images');
-  const [myImageAccesses, setMyImageAccesses] = useState(MOCK_MY_IMAGE_ACCESSES);
-  const [myAccesses, setMyAccesses] = useState(MOCK_MY_ACCESSES);
+  const [myImageAccesses, setMyImageAccesses] = useState(session.isDemo ? MOCK_MY_IMAGE_ACCESSES : []);
+  const [myAccesses, setMyAccesses]           = useState(session.isDemo ? MOCK_MY_ACCESSES : []);
 
   useEffect(() => {
     if (session.isDemo) return;
     API.fetchMyImageHistory(session.token, session.username)
       .then(({ accesses }) => setMyImageAccesses(accesses))
-      .catch(() => {});
+      .catch(() => setMyImageAccesses([]));
     API.fetchMyAccesses(session.token, session.username)
       .then(({ accesses }) => setMyAccesses(accesses))
-      .catch(() => {});
-  }, []);
+      .catch(() => setMyAccesses([]));
+  }, [session.username]);
 
-  const data = tab === 'my_images' ? myImageAccesses : myAccesses;
+  const data = tab === 'my_images' ? myImageAccesses : myAccesses ?? [];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -95,7 +95,7 @@ export default function HistoryScreen() {
           flexDirection: 'row', backgroundColor: colors.surface,
           borderRadius: Radius.full, padding: 3,
         }}>
-          {[['my_images', 'Mes images'], ['my_access', 'Mon accès']].map(([key, label]) => (
+          {[['my_images', 'Mes images'], ['my_access', 'Mon accès'], ['watermark', 'Filigrane']].map(([key, label]) => (
             <TouchableOpacity
               key={key}
               style={[{ flex: 1, paddingVertical: 10, borderRadius: Radius.full, alignItems: 'center' },
@@ -110,6 +110,33 @@ export default function HistoryScreen() {
         </View>
       </View>
 
+      {tab === 'watermark' ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <View style={{
+            width: 72, height: 72, borderRadius: 36,
+            backgroundColor: 'rgba(255,107,0,0.1)',
+            borderWidth: 1, borderColor: 'rgba(255,107,0,0.25)',
+            alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+          }}>
+            <Text style={{ fontSize: 32 }}>🔬</Text>
+          </View>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPri, marginBottom: 8, textAlign: 'center' }}>
+            Détection de filigrane
+          </Text>
+          <View style={{
+            backgroundColor: 'rgba(255,107,0,0.07)', borderWidth: 1,
+            borderColor: 'rgba(255,107,0,0.2)', borderRadius: Radius.md,
+            paddingHorizontal: 16, paddingVertical: 8, marginBottom: 16,
+          }}>
+            <Text style={{ fontSize: 10, color: colors.accent, fontFamily: 'Courier New', letterSpacing: 2 }}>
+              EN COURS DE DÉVELOPPEMENT
+            </Text>
+          </View>
+          <Text style={{ fontSize: 13, color: colors.textSec, textAlign: 'center', lineHeight: 20 }}>
+            Cette fonctionnalité permettra d'extraire le filigrane numérique invisible intégré dans une image pour identifier son origine.
+          </Text>
+        </View>
+      ) : (
       <FlatList
         data={data}
         keyExtractor={item => item.id}
@@ -181,6 +208,7 @@ export default function HistoryScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       />
+      )}
     </View>
   );
 }

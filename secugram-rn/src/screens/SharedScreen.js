@@ -236,7 +236,23 @@ export default function SharedScreen() {
       return;
     }
     API.fetchSharedPhotos(session.token, session.username)
-      .then(({ photos: p }) => setPhotos(p))
+      .then(async ({ photos: p }) => {
+        // Vérifier que chaque image existe encore sur le serveur
+        const checks = await Promise.allSettled(
+          p.map(photo => API.getPost(session.token, session.username, photo.image_id))
+        );
+        const valid = p.filter((_, i) => {
+          const r = checks[i];
+          if (r.status === 'fulfilled') return true;
+          const msg = r.reason?.message ?? '';
+          return !msg.includes('trouvé') && !msg.includes('404');
+        });
+        // Nettoyer le cache si des images ont été supprimées
+        if (valid.length !== p.length) {
+          API.saveSharedPhotos(valid, session.username).catch(() => {});
+        }
+        setPhotos(valid);
+      })
       .catch(() => setPhotos([]));
   }, []);
 

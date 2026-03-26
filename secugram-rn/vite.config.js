@@ -13,7 +13,7 @@ const jsxInJsPlugin = {
     const result = await transformAsync(code, {
       filename: id,
       sourceType: 'module',
-      configFile: false,   // ignorer babel.config.js (React Native preset → CommonJS)
+      configFile: false,
       babelrc: false,
       presets: [['@babel/preset-react', { runtime: 'automatic' }]],
       sourceMaps: true,
@@ -36,11 +36,18 @@ export default defineConfig({
       'react-native-image-picker': path.resolve(
         __dirname, 'src/stubs/image-picker.js'
       ),
+      '@react-native-async-storage/async-storage': path.resolve(
+        __dirname, 'src/stubs/async-storage.js'
+      ),
     },
     extensions: ['.web.js', '.js', '.web.ts', '.ts', '.web.tsx', '.tsx'],
   },
   optimizeDeps: {
-    include: ['react-native-web'],
-    exclude: ['react-native-safe-area-context', 'react-native-image-picker'],
+    exclude: [
+      'react-native-web',
+      'react-native-safe-area-context',
+      'react-native-image-picker',
+      '@react-native-async-storage/async-storage',
+    ],
   },
 });

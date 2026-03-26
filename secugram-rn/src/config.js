@@ -8,9 +8,7 @@
  * SECUGRAM_API_URL dans un fichier .env à la racine du projet.
  */
 
-export const API_BASE_URL = __DEV__
-  ? 'http://localhost:8300'              // Device physique → PC via adb reverse (port 8300)
-  : 'https://api.secugram.io';           // Production
+export const API_BASE_URL = 'https://tdc-server.onrender.com';
 
 /**
  * Timeout par défaut pour les requêtes réseau (ms).

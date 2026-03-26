@@ -1,10 +1,11 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 
 const appDirectory = path.resolve(__dirname);
 
 module.exports = {
-  entry: path.resolve(appDirectory, 'index.js'),
+  entry: path.resolve(appDirectory, 'index.web.js'),
   output: {
     filename: 'bundle.web.js',
     path: path.resolve(appDirectory, 'dist'),
@@ -14,6 +15,9 @@ module.exports = {
     extensions: ['.web.js', '.js', '.web.ts', '.ts', '.web.tsx', '.tsx'],
     alias: {
       'react-native$': 'react-native-web',
+      'react-native-safe-area-context': path.resolve(appDirectory, 'src/stubs/safe-area-context.js'),
+      'react-native-image-picker': path.resolve(appDirectory, 'src/stubs/image-picker.js'),
+      '@react-native-async-storage/async-storage': path.resolve(appDirectory, 'src/stubs/async-storage.js'),
     },
   },
   module: {
@@ -22,8 +26,10 @@ module.exports = {
         test: /\.(js|jsx|ts|tsx)$/,
         include: [
           path.resolve(appDirectory, 'index.js'),
+          path.resolve(appDirectory, 'index.web.js'),
           path.resolve(appDirectory, 'App.js'),
           path.resolve(appDirectory, 'src'),
+          path.resolve(appDirectory, 'src/web'),
           path.resolve(appDirectory, 'node_modules', 'react-native'),
           path.resolve(appDirectory, 'node_modules', 'react-native-web'),
           path.resolve(appDirectory, 'node_modules', '@react-native'),
@@ -37,7 +43,7 @@ module.exports = {
           options: {
             presets: [
               ['@babel/preset-env', { loose: true }],
-              '@babel/preset-react',
+              ['@babel/preset-react', { runtime: 'automatic' }],
             ],
             plugins: [
               'react-native-web',
@@ -57,6 +63,10 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: path.resolve(appDirectory, 'public/index.html'),
+    }),
+    new webpack.DefinePlugin({
+      __DEV__: JSON.stringify(true),
+      global: 'globalThis',
     }),
   ],
   devServer: {

@@ -3,6 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity, Image,
   Modal, ScrollView, TextInput, Alert, Dimensions, ActivityIndicator,
 } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { Radius, Spacing } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -51,16 +52,29 @@ function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemo
   const [newUser, setNewUser] = useState('');
   const [authorized, setAuthorized] = useState(photo?.authorized ?? []);
   const [tab, setTab] = useState('auth'); // 'auth' | 'history' | 'requests'
+  const [history, setHistory] = useState(photo?.history ?? []);
   const [requests, setRequests] = useState([]);
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError]     = useState('');
 
   useEffect(() => {
-    if (photo) setAuthorized(photo.authorized ?? []);
+    if (photo) {
+      setAuthorized(photo.authorized ?? []);
+      setHistory(photo.history ?? []);
+    }
   }, [photo]);
 
   useEffect(() => {
     if (!photo || !visible) return;
+    // Recharger l'historique frais depuis AsyncStorage à chaque ouverture
+    API.fetchMyImageHistory(null, photo.owner_username ?? '')
+      .then(({ accesses }) => {
+        const photoAccesses = accesses.filter(a => a.image_id === photo.image_id);
+        if (photoAccesses.length > 0) {
+          setHistory(photoAccesses.map(a => ({ viewer: a.viewer, date: a.date, type: a.type })));
+        }
+      })
+      .catch(() => {});
     API.fetchAccessRequests(photo.owner_username ?? '')
       .then(({ requests: r }) => setRequests(r.filter(req => req.image_id === photo.image_id && req.status === 'pending')))
       .catch(() => {});
@@ -240,12 +254,12 @@ function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemo
                 <Text style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New', letterSpacing: 2, marginBottom: 12 }}>
                   HISTORIQUE D'ACCÈS
                 </Text>
-                {photo.history.length === 0 ? (
+                {history.length === 0 ? (
                   <View style={{ alignItems: 'center', paddingVertical: 24 }}>
                     <Text style={{ fontSize: 13, color: colors.textMut, fontFamily: 'Courier New' }}>Aucun accès enregistré</Text>
                   </View>
                 ) : (
-                  photo.history.map((h, i) => (
+                  history.map((h, i) => (
                     <View key={i} style={{
                       flexDirection: 'row', alignItems: 'center',
                       backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
@@ -278,9 +292,10 @@ function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemo
                     </View>
                   ))
                 )}
+
                 <View style={{
-                  marginTop: 8, backgroundColor: 'rgba(255,107,0,0.06)',
-                  borderWidth: 1, borderColor: 'rgba(255,107,0,0.15)',
+                  marginTop: 12, backgroundColor: 'rgba(0,207,255,0.06)',
+                  borderWidth: 1, borderColor: 'rgba(0,207,255,0.15)',
                   borderRadius: Radius.md, padding: 12,
                 }}>
                   <Text style={{ fontSize: 11, color: colors.textSec, fontFamily: 'Courier New', lineHeight: 18 }}>
@@ -444,6 +459,13 @@ export default function MyPhotosScreen() {
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
 
+  // Garder `selected` en sync avec `photos` (autorisations, historique)
+  useEffect(() => {
+    if (!selected) return;
+    const updated = photos.find(p => p.image_id === selected.image_id);
+    if (updated) setSelected(updated);
+  }, [photos]);
+
   useEffect(() => {
     if (session.isDemo) {
       setPhotos(MOCK_MY_PHOTOS);
@@ -470,16 +492,19 @@ export default function MyPhotosScreen() {
       const updated = [...(x.authorized ?? []), username];
       const sharedPhoto = { ...x, owner_username: session.username, authorized: updated };
       API.addToSharedPhotos(sharedPhoto, [username]).catch(() => {});
+      API.updateFeedAuthorized(imageId, updated).catch(() => {});
+      API.updateSessionPhoto(imageId, { authorized: updated }, session.username).catch(() => {});
       return { ...x, authorized: updated };
     }));
   };
 
   const handleRemoveUser = (imageId, username) => {
-    setPhotos(p => p.map(x =>
-      x.image_id === imageId
-        ? { ...x, authorized: (x.authorized ?? []).filter(u => u !== username) }
-        : x
-    ));
+    setPhotos(p => p.map(x => {
+      if (x.image_id !== imageId) return x;
+      const updated = (x.authorized ?? []).filter(u => u !== username);
+      API.updateSessionPhoto(imageId, { authorized: updated }, session.username).catch(() => {});
+      return { ...x, authorized: updated };
+    }));
     if (!session.isDemo) API.revokeAccess(session.token, imageId, username, session.username).catch(() => {});
   };
 
@@ -487,11 +512,12 @@ export default function MyPhotosScreen() {
     if (!session.isDemo) {
       API.grantAccessRequest(session.token, session.username, imageId, requesterUsername).catch(() => {});
     }
-    setPhotos(p => p.map(x =>
-      x.image_id === imageId
-        ? { ...x, authorized: [...(x.authorized ?? []), requesterUsername] }
-        : x
-    ));
+    setPhotos(p => p.map(x => {
+      if (x.image_id !== imageId) return x;
+      const updated = [...(x.authorized ?? []), requesterUsername];
+      API.updateFeedAuthorized(imageId, updated).catch(() => {});
+      return { ...x, authorized: updated };
+    }));
   };
 
   const handleToggleBlock = (imageId) => {

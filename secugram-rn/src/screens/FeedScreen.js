@@ -98,6 +98,12 @@ function PostCard({ item, currentUsername, isPending, onRequestAccess, token }) 
     try {
       const { signed_url } = await API.recordAccess(token, item.image_id, currentUsername);
       setDecryptedUri(signed_url);
+      API.logAccess({
+        imageId:          item.image_id,
+        imageDescription: item.description ?? item.caption ?? '',
+        viewerUsername:   currentUsername,
+        ownerUsername:    item.owner_username,
+      }).catch(() => {});
     } catch (e) {
       Alert.alert('Erreur', e.message || 'Impossible de déchiffrer.');
     } finally {
@@ -220,7 +226,26 @@ export default function FeedScreen() {
       setRefreshing(false);
       return;
     }
-    const { posts: p } = await API.fetchFeed();
+    let { posts: p } = await API.fetchFeed();
+
+    // Supprimer les posts dont l'image n'existe plus sur le serveur
+    if (p.length > 0) {
+      const checks = await Promise.allSettled(
+        p.map(post => API.getPost(session.token, session.username, post.image_id))
+      );
+      const valid = p.filter((_, i) => {
+        const r = checks[i];
+        if (r.status === 'fulfilled') return true;
+        // Supprimer uniquement si le serveur confirme que le post n'existe pas
+        const msg = r.reason?.message ?? '';
+        return !msg.includes('trouvé') && !msg.includes('404');
+      });
+      if (valid.length !== p.length) {
+        API.syncFeed(valid).catch(() => {});
+        p = valid;
+      }
+    }
+
     setPosts(p);
     // Marquer les demandes déjà envoyées
     const { photos: shared } = await API.fetchSharedPhotos(null, session.username).catch(() => ({ photos: [] }));

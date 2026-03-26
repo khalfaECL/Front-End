@@ -220,6 +220,17 @@ export async function addToSessionPhotos(photo, username) {
   }
 }
 
+// Met à jour les champs d'une photo existante dans le cache local
+export async function updateSessionPhoto(imageId, updates, username) {
+  const key = photosKey(username);
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return;
+  const list = JSON.parse(raw).map(p =>
+    p.image_id === imageId ? { ...p, ...updates } : p
+  );
+  await AsyncStorage.setItem(key, JSON.stringify(list));
+}
+
 export async function removeFromSessionPhotos(imageId, username) {
   const key = photosKey(username);
   const raw = await AsyncStorage.getItem(key);
@@ -251,6 +262,10 @@ export async function fetchSharedPhotos(_token, username) {
   if (!username) return { photos: [] };
   const raw = await AsyncStorage.getItem(sharedKey(username));
   return { photos: raw ? JSON.parse(raw) : [] };
+}
+
+export async function saveSharedPhotos(photos, username) {
+  await AsyncStorage.setItem(sharedKey(username), JSON.stringify(photos));
 }
 
 /**
@@ -294,9 +309,61 @@ export async function fetchMyPhotos(_token, username) {
  * @returns {{ image_id: string, preview_uri: string|null }}
  */
 /**
+ * POST /trust/watermark  (Tiers de Confiance)
+ * Applique un filigrane DCT invisible sur l'image avec le username du déposeur.
+ * Retourne un objet { uri, name, type } utilisable directement dans FormData RN.
+ */
+export async function watermarkImage(imageAsset, username) {
+  const formData = new FormData();
+  formData.append('image', {
+    uri:  imageAsset.uri,
+    name: imageAsset.fileName ?? 'photo.jpg',
+    type: imageAsset.type     ?? 'image/jpeg',
+  });
+  formData.append('username', username);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/trust/watermark`, {
+    method: 'POST',
+    body:   formData,
+  });
+  if (!res.ok) throw new Error(`Filigrane échoué : ${res.status}`);
+  const blob = await res.blob();
+  // React Native : reconstruire l'URI blob pour l'utiliser dans le prochain FormData
+  const d = blob._data;
+  if (!d?.blobId) throw new Error('Blob URI indisponible');
+  const blobUri = `blob:${d.blobId}?offset=${d.offset ?? 0}&size=${d.size ?? blob.size}`;
+  return { uri: blobUri, name: `watermarked_${username}.png`, type: 'image/png' };
+}
+
+/**
+ * POST /trust/extract  (Tiers de Confiance)
+ * Compare l'image originale et une image suspecte pour extraire le filigrane DCT.
+ * @param {{ uri, fileName?, type? }} originalAsset   — image originale (avant filigrane)
+ * @param {{ uri, fileName?, type? }} suspectedAsset  — image suspecte (avec filigrane potentiel)
+ * @returns {{ message: string }}  Le username extrait, ou { error: string }
+ */
+export async function extractWatermark(originalAsset, suspectedAsset) {
+  const formData = new FormData();
+  formData.append('original', {
+    uri:  originalAsset.uri,
+    name: originalAsset.fileName ?? 'original.jpg',
+    type: originalAsset.type     ?? 'image/jpeg',
+  });
+  formData.append('watermarked', {
+    uri:  suspectedAsset.uri,
+    name: suspectedAsset.fileName ?? 'suspected.jpg',
+    type: suspectedAsset.type     ?? 'image/jpeg',
+  });
+  const res = await fetchWithTimeout(`${API_BASE_URL}/trust/extract`, {
+    method: 'POST',
+    body:   formData,
+  });
+  return handleResponse(res);
+}
+
+/**
  * POST /add_post  (Tiers de Confiance)
- * Le TdC génère la clé AES-256, chiffre et watermark l'image en interne.
- * authorized_users : envoyé comme chaîne séparée par virgules.
+ * Chiffrement AES-256 + stockage de l'image.
+ * Le filigrane DCT est disponible via watermarkImage() de façon indépendante.
  *
  * @returns {{ image_id: string, preview_uri: null, authorized: string[] }}
  */
@@ -322,7 +389,7 @@ export async function uploadPhoto(token, { imageAsset, description, authorizedUs
   const data = await handleResponse(res);
   return {
     image_id:    data.image_id,
-    preview_uri: null,             // Le TdC ne retourne pas de preview_url
+    preview_uri: null,
     authorized:  data.autorisations ?? authorizedUsers ?? [],
   };
 }
@@ -421,11 +488,23 @@ export async function setPhotoBlocked(token, imageId, blocked) {
 }
 
 export async function deletePhoto(token, username, imageId) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/delete_key/${username}/${imageId}`, {
+  // 1. Supprimer de MongoDB (posts + keys)
+  const res = await fetchWithTimeout(`${API_BASE_URL}/delete_post/${imageId}`, {
     method: 'DELETE',
-    headers: { token },
+    headers: tdcHeaders(),
+    body: JSON.stringify({ username, token }),
   });
-  return handleResponse(res);
+  await handleResponse(res);
+
+  // 2. Supprimer du cache local photos_<username>
+  await removeFromSessionPhotos(imageId, username);
+
+  // 3. Supprimer du feed_all
+  const feedRaw = await AsyncStorage.getItem('feed_all');
+  if (feedRaw) {
+    const filtered = JSON.parse(feedRaw).filter(p => p.image_id !== imageId);
+    await AsyncStorage.setItem('feed_all', JSON.stringify(filtered));
+  }
 }
 
 
@@ -462,6 +541,7 @@ const historyKey   = (username) => `history_${username}`;
 const myAccessKey  = (username) => `myaccess_${username}`;
 
 export async function logAccess({ imageId, imageDescription, viewerUsername, ownerUsername }) {
+  const date = new Date().toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const entry = {
     id:                `${Date.now()}_${Math.random().toString(36).slice(2)}`,
     image_id:          imageId,
@@ -469,22 +549,59 @@ export async function logAccess({ imageId, imageDescription, viewerUsername, own
     preview_uri:       null,
     viewer:            viewerUsername,
     owner:             ownerUsername,
-    date:              new Date().toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    date,
     type:              'app',
   };
-  // Côté propriétaire : "qui a vu mes images"
+
+  // 1. Historique global du propriétaire (HistoryScreen "Mes images")
   const hKey = historyKey(ownerUsername);
   const hRaw = await AsyncStorage.getItem(hKey);
   const hList = hRaw ? JSON.parse(hRaw) : [];
   hList.unshift(entry);
   await AsyncStorage.setItem(hKey, JSON.stringify(hList));
 
-  // Côté viewer : "images que j'ai consultées"
+  // 2. Historique du viewer (HistoryScreen "Mon accès")
   const aKey = myAccessKey(viewerUsername);
   const aRaw = await AsyncStorage.getItem(aKey);
   const aList = aRaw ? JSON.parse(aRaw) : [];
   aList.unshift(entry);
   await AsyncStorage.setItem(aKey, JSON.stringify(aList));
+
+  // 3. Historique embarqué dans la photo (PhotoDetailModal "Historique" + access_count)
+  const pKey = photosKey(ownerUsername);
+  const pRaw = await AsyncStorage.getItem(pKey);
+  if (pRaw) {
+    const pList = JSON.parse(pRaw).map(p => {
+      if (p.image_id !== imageId) return p;
+      return {
+        ...p,
+        access_count: (p.access_count ?? 0) + 1,
+        history: [{ viewer: viewerUsername, date, type: 'app' }, ...(p.history ?? [])],
+      };
+    });
+    await AsyncStorage.setItem(pKey, JSON.stringify(pList));
+  }
+}
+
+/**
+ * Enregistre une détection de filigrane dans l'historique du propriétaire (type 'watermark').
+ */
+export async function logWatermarkDetection({ imageId, imageDescription, detectedUsername, ownerUsername }) {
+  const entry = {
+    id:                `wm_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    image_id:          imageId,
+    image_description: imageDescription,
+    preview_uri:       null,
+    viewer:            detectedUsername,
+    owner:             ownerUsername,
+    date:              new Date().toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    type:              'watermark',
+  };
+  const hKey = historyKey(ownerUsername);
+  const hRaw = await AsyncStorage.getItem(hKey);
+  const hList = hRaw ? JSON.parse(hRaw) : [];
+  hList.unshift(entry);
+  await AsyncStorage.setItem(hKey, JSON.stringify(hList));
 }
 
 export async function fetchMyImageHistory(_token, username) {
@@ -516,6 +633,21 @@ export async function addToFeed(post) {
 export async function fetchFeed() {
   const raw = await AsyncStorage.getItem(FEED_KEY);
   return { posts: raw ? JSON.parse(raw) : [] };
+}
+
+// Écrase le cache feed avec une liste filtrée (supprime les posts inexistants)
+export async function syncFeed(posts) {
+  await AsyncStorage.setItem(FEED_KEY, JSON.stringify(posts));
+}
+
+// Met à jour la liste authorized d'un post dans le feed cache
+export async function updateFeedAuthorized(imageId, authorizedUsernames) {
+  const raw = await AsyncStorage.getItem(FEED_KEY);
+  if (!raw) return;
+  const list = JSON.parse(raw).map(p =>
+    p.image_id === imageId ? { ...p, authorized: authorizedUsernames } : p
+  );
+  await AsyncStorage.setItem(FEED_KEY, JSON.stringify(list));
 }
 
 export async function requestImageAccess({ imageId, imageDescription, ownerUsername, requesterUsername }) {
