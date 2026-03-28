@@ -4,7 +4,7 @@ import { useTheme } from '../../hooks/useTheme';
 
 export default function ProfilePage() {
   const { session, logout } = useAuth();
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors, isDark, toggleTheme, viewCooldown, setViewCooldown, COOLDOWN_MIN, COOLDOWN_MAX } = useTheme();
 
   const initials = (session?.username || '?').slice(0, 2).toUpperCase();
 
@@ -95,18 +95,72 @@ export default function ProfilePage() {
         {/* Info rows */}
         {infoRow('IDENTIFIANT', session?.username ?? '—')}
         {infoRow('USER ID', session?.userId ?? '—')}
-        {infoRow('SESSION', session?.isDemo ? 'Demo' : 'Authentifiee')}
-        <div style={{ padding: '14px 0', borderBottom: `1px solid ${colors.border}` }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontFamily: 'Courier New, monospace', letterSpacing: 2, color: colors.textSec }}>
-              EXPIRATION
-            </span>
-            <span style={{ fontSize: 12, color: colors.textPri, fontFamily: 'Courier New, monospace' }}>
-              {session?.expiresAt
-                ? new Date(session.expiresAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
-                : '—'}
-            </span>
+      </div>
+
+      {/* Cooldown card */}
+      <div style={{
+        backgroundColor: colors.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 18,
+        padding: '20px 24px',
+        marginBottom: 16,
+      }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: '600', color: colors.textPri, marginBottom: 3 }}>
+            Intervalle entre vues
           </div>
+          <div style={{ fontSize: 12, color: colors.textSec }}>
+            Delai minimum entre deux consultations d'une meme image.
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            onClick={() => setViewCooldown(viewCooldown - 1)}
+            disabled={viewCooldown <= COOLDOWN_MIN}
+            style={{
+              width: 38, height: 38,
+              borderRadius: 10,
+              backgroundColor: viewCooldown <= COOLDOWN_MIN ? 'transparent' : colors.accent,
+              border: `1px solid ${viewCooldown <= COOLDOWN_MIN ? colors.border : colors.accent}`,
+              color: viewCooldown <= COOLDOWN_MIN ? colors.textMut : '#fff',
+              fontSize: 20,
+              fontWeight: '700',
+              cursor: viewCooldown <= COOLDOWN_MIN ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >−</button>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ height: 6, backgroundColor: colors.surface, borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{
+                height: 6,
+                backgroundColor: colors.accent,
+                borderRadius: 3,
+                width: `${((viewCooldown - COOLDOWN_MIN) / (COOLDOWN_MAX - COOLDOWN_MIN)) * 100}%`,
+                transition: 'width 0.2s',
+              }}/>
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 15, fontWeight: '700', color: colors.textPri, fontFamily: 'Courier New, monospace' }}>
+              {viewCooldown} min
+            </div>
+          </div>
+          <button
+            onClick={() => setViewCooldown(viewCooldown + 1)}
+            disabled={viewCooldown >= COOLDOWN_MAX}
+            style={{
+              width: 38, height: 38,
+              borderRadius: 10,
+              backgroundColor: viewCooldown >= COOLDOWN_MAX ? 'transparent' : colors.accent,
+              border: `1px solid ${viewCooldown >= COOLDOWN_MAX ? colors.border : colors.accent}`,
+              color: viewCooldown >= COOLDOWN_MAX ? colors.textMut : '#fff',
+              fontSize: 20,
+              fontWeight: '700',
+              cursor: viewCooldown >= COOLDOWN_MAX ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >+</button>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: colors.textMut, fontFamily: 'Courier New, monospace', letterSpacing: 1, textAlign: 'center' }}>
+          Spectre autorise : {COOLDOWN_MIN}min — {COOLDOWN_MAX}min
         </div>
       </div>
 

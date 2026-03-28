@@ -166,29 +166,34 @@ function EphemeralViewer({ uri, durationSec = 5, onClose }) {
 // ── Post Card ─────────────────────────────────────────────────────────────────
 
 function PostCard({ item, currentUsername, token, isPending, onRequestAccess }) {
-  const { colors } = useTheme();
+  const { colors, viewCooldown } = useTheme();
   const isOwner      = item.owner_username === currentUsername;
   const isAuthorized = isOwner || (item.authorized ?? []).includes(currentUsername);
   const initials     = (item.owner_username || '?').slice(0, 2).toUpperCase();
 
-  const [decryptedUri, setDecryptedUri] = useState(null);
-  const [decrypting, setDecrypting]     = useState(false);
-  const [decryptErr, setDecryptErr]     = useState('');
+  const [decryptedUri,  setDecryptedUri]  = useState(null);
+  const [decrypting,    setDecrypting]    = useState(false);
+  const [decryptErr,    setDecryptErr]    = useState('');
+  const [ephemeralSecs, setEphemeralSecs] = useState(item.ephemeralDuration ?? 5);
 
   const handleDecrypt = async () => {
-    if (!isAuthorized || isOwner) return;
+    if (!isAuthorized) return;
     if (decryptedUri) { setDecryptedUri(null); return; }
     setDecrypting(true);
     setDecryptErr('');
     try {
-      const { signed_url } = await API.recordAccess(token, item.image_id, currentUsername);
+      const { signed_url, ephemeral_duration } = await API.recordAccess(token, item.image_id, currentUsername, viewCooldown);
+      setEphemeralSecs(ephemeral_duration ?? item.ephemeralDuration ?? 5);
       setDecryptedUri(signed_url);
-      API.logAccess({
-        imageId:          item.image_id,
-        imageDescription: item.description ?? item.caption ?? '',
-        viewerUsername:   currentUsername,
-        ownerUsername:    item.owner_username,
-      }).catch(() => {});
+      if (!isOwner) {
+        API.logAccess({
+          imageId:          item.image_id,
+          imageDescription: item.description ?? item.caption ?? '',
+          viewerUsername:   currentUsername,
+          ownerUsername:    item.owner_username,
+          token,
+        }).catch(() => {});
+      }
     } catch (e) {
       setDecryptErr(e.message || 'Impossible de déchiffrer.');
     } finally {
@@ -247,42 +252,32 @@ function PostCard({ item, currentUsername, token, isPending, onRequestAccess }) 
 
       {/* Image area */}
       <div
-        style={{ position: 'relative', cursor: isAuthorized && !isOwner ? 'pointer' : 'default' }}
+        style={{ position: 'relative', cursor: isAuthorized ? 'pointer' : 'default' }}
         onClick={handleDecrypt}
       >
-        {isOwner && item.preview_uri ? (
-          <img
-            src={item.preview_uri}
-            alt={item.description}
-            style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }}
-          />
-        ) : (
-          <>
-            <EncryptedPlaceholder />
-            {isAuthorized && !isOwner && (
-              <div style={{
-                position: 'absolute',
-                bottom: 12,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                backgroundColor: 'rgba(0,0,0,0.65)',
-                borderRadius: 20,
-                padding: '6px 18px',
-                border: '1px solid rgba(255,255,255,0.15)',
-                whiteSpace: 'nowrap',
-              }}>
-                <span style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
-                  {decrypting ? 'Déchiffrement...' : 'Cliquer pour déchiffrer'}
-                </span>
-              </div>
-            )}
-          </>
+        <EncryptedPlaceholder />
+        {isAuthorized && (
+          <div style={{
+            position: 'absolute',
+            bottom: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            borderRadius: 20,
+            padding: '6px 18px',
+            border: '1px solid rgba(255,255,255,0.15)',
+            whiteSpace: 'nowrap',
+          }}>
+            <span style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+              {decrypting ? 'Déchiffrement...' : 'Cliquer pour déchiffrer'}
+            </span>
+          </div>
         )}
       </div>
 
       {/* Ephemeral viewer overlay */}
       {decryptedUri && (
-        <EphemeralViewer uri={decryptedUri} durationSec={5} onClose={() => setDecryptedUri(null)} />
+        <EphemeralViewer uri={decryptedUri} durationSec={ephemeralSecs} onClose={() => setDecryptedUri(null)} />
       )}
 
       {/* Footer */}
@@ -356,24 +351,7 @@ export default function FeedPage() {
     setError('');
     try {
       if (session.isDemo) { setPosts([]); setLoading(false); return; }
-      let { posts: p } = await API.fetchFeed();
-
-      if (p.length > 0) {
-        const checks = await Promise.allSettled(
-          p.map(post => API.getPost(session.token, session.username, post.image_id))
-        );
-        const valid = p.filter((_, i) => {
-          const r = checks[i];
-          if (r.status === 'fulfilled') return true;
-          const msg = r.reason?.message ?? '';
-          return !msg.includes('trouvé') && !msg.includes('404');
-        });
-        if (valid.length !== p.length) {
-          API.syncFeed(valid).catch(() => {});
-          p = valid;
-        }
-      }
-
+      const { posts: p } = await API.fetchFeed(session.token, session.username);
       setPosts(p);
       const { photos: shared } = await API.fetchSharedPhotos(null, session.username).catch(() => ({ photos: [] }));
       const pending = {};
@@ -395,6 +373,7 @@ export default function FeedPage() {
         imageDescription:  item.description ?? item.caption ?? '',
         ownerUsername:     item.owner_username,
         requesterUsername: session.username,
+        token:             session.token,
       });
       setPendingIds(p => ({ ...p, [item.image_id]: true }));
     } catch (e) {

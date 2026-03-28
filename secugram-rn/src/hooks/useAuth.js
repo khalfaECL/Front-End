@@ -47,6 +47,7 @@ export function AuthProvider({ children }) {
       token:     data.token,
       userId:    data.user_id,
       username:  data.username,
+      email:     email,
       expiresAt: Date.now() + data.expires_in * 1000,
     };
     setSession(sess);

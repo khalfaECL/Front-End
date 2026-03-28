@@ -32,11 +32,16 @@ function UploadModal({ onClose, onSuccess, colors }) {
   const { session } = useAuth();
   const [description, setDescription] = useState('');
   const [authorizedInput, setAuthorizedInput] = useState('');
+  const [ephemeralDuration, setEphemeralDuration] = useState(5);
+  const [maxViews, setMaxViews] = useState(3);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUri, setPreviewUri] = useState(null);
   const fileRef = useRef();
+
+  const EPHEM_MIN = 1; const EPHEM_MAX = 10;
+  const VIEWS_MIN = 1; const VIEWS_MAX = 20;
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -67,10 +72,11 @@ function UploadModal({ onClose, onSuccess, colors }) {
           uri: previewUri,
           fileName: selectedFile?.name ?? 'photo.jpg',
           type: selectedFile?.type ?? 'image/jpeg',
+          file: selectedFile,
         };
         const data = await API.uploadPhoto(
           session.token,
-          { imageAsset, description, authorizedUsers, ephemeralDuration: 5, maxViews: 3 },
+          { imageAsset, description, authorizedUsers, ephemeralDuration, maxViews },
           { userId: session.userId, username: session.username }
         );
         imageId = data.image_id;
@@ -82,8 +88,8 @@ function UploadModal({ onClose, onSuccess, colors }) {
         uri,
         description,
         authorized: authorizedUsers,
-        ephemeralDuration: 5,
-        maxViews: 3,
+        ephemeralDuration,
+        maxViews,
       });
     } catch (e) {
       setError(e.message || 'Erreur lors du depot.');
@@ -193,6 +199,56 @@ function UploadModal({ onClose, onSuccess, colors }) {
               placeholder="alice, bob, charlie..."
               style={inputStyle}
             />
+          </div>
+
+          {/* Durée d'affichage */}
+          <div style={{ marginBottom: 14, backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: '600', color: colors.textPri }}>Durée d'affichage</div>
+                <div style={{ fontSize: 11, color: colors.textSec, marginTop: 2 }}>Secondes avant fermeture auto</div>
+              </div>
+              <div style={{ backgroundColor: colors.accentDim, borderRadius: 8, padding: '4px 10px', border: '1px solid rgba(255,107,0,0.25)' }}>
+                <span style={{ fontSize: 15, fontWeight: '800', color: colors.accent }}>{ephemeralDuration}s</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button type="button" onClick={() => setEphemeralDuration(v => Math.max(EPHEM_MIN, v - 1))} disabled={ephemeralDuration <= EPHEM_MIN}
+                style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${ephemeralDuration <= EPHEM_MIN ? colors.border : colors.accent}`, backgroundColor: ephemeralDuration <= EPHEM_MIN ? 'transparent' : colors.accent, color: ephemeralDuration <= EPHEM_MIN ? colors.textMut : '#fff', fontSize: 18, fontWeight: '700', cursor: ephemeralDuration <= EPHEM_MIN ? 'not-allowed' : 'pointer' }}>−</button>
+              <div style={{ flex: 1, height: 5, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 3, backgroundColor: colors.accent, width: `${((ephemeralDuration - EPHEM_MIN) / (EPHEM_MAX - EPHEM_MIN)) * 100}%`, transition: 'width 0.15s' }}/>
+              </div>
+              <button type="button" onClick={() => setEphemeralDuration(v => Math.min(EPHEM_MAX, v + 1))} disabled={ephemeralDuration >= EPHEM_MAX}
+                style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${ephemeralDuration >= EPHEM_MAX ? colors.border : colors.accent}`, backgroundColor: ephemeralDuration >= EPHEM_MAX ? 'transparent' : colors.accent, color: ephemeralDuration >= EPHEM_MAX ? colors.textMut : '#fff', fontSize: 18, fontWeight: '700', cursor: ephemeralDuration >= EPHEM_MAX ? 'not-allowed' : 'pointer' }}>+</button>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10, color: colors.textMut, fontFamily: 'Courier New, monospace', textAlign: 'center', letterSpacing: 1 }}>
+              Spectre : {EPHEM_MIN}s — {EPHEM_MAX}s
+            </div>
+          </div>
+
+          {/* Nombre max de vues */}
+          <div style={{ marginBottom: 18, backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: '600', color: colors.textPri }}>Nb de visualisations max</div>
+                <div style={{ fontSize: 11, color: colors.textSec, marginTop: 2 }}>Par utilisateur autorisé</div>
+              </div>
+              <div style={{ backgroundColor: colors.accentDim, borderRadius: 8, padding: '4px 10px', border: '1px solid rgba(255,107,0,0.25)' }}>
+                <span style={{ fontSize: 15, fontWeight: '800', color: colors.accent }}>{maxViews}×</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button type="button" onClick={() => setMaxViews(v => Math.max(VIEWS_MIN, v - 1))} disabled={maxViews <= VIEWS_MIN}
+                style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${maxViews <= VIEWS_MIN ? colors.border : colors.accent}`, backgroundColor: maxViews <= VIEWS_MIN ? 'transparent' : colors.accent, color: maxViews <= VIEWS_MIN ? colors.textMut : '#fff', fontSize: 18, fontWeight: '700', cursor: maxViews <= VIEWS_MIN ? 'not-allowed' : 'pointer' }}>−</button>
+              <div style={{ flex: 1, height: 5, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 3, backgroundColor: colors.accent, width: `${((maxViews - VIEWS_MIN) / (VIEWS_MAX - VIEWS_MIN)) * 100}%`, transition: 'width 0.15s' }}/>
+              </div>
+              <button type="button" onClick={() => setMaxViews(v => Math.min(VIEWS_MAX, v + 1))} disabled={maxViews >= VIEWS_MAX}
+                style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${maxViews >= VIEWS_MAX ? colors.border : colors.accent}`, backgroundColor: maxViews >= VIEWS_MAX ? 'transparent' : colors.accent, color: maxViews >= VIEWS_MAX ? colors.textMut : '#fff', fontSize: 18, fontWeight: '700', cursor: maxViews >= VIEWS_MAX ? 'not-allowed' : 'pointer' }}>+</button>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10, color: colors.textMut, fontFamily: 'Courier New, monospace', textAlign: 'center', letterSpacing: 1 }}>
+              Limite : {VIEWS_MIN} — {VIEWS_MAX} visualisations
+            </div>
           </div>
 
           {error && (

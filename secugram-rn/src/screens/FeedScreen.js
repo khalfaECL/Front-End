@@ -83,27 +83,32 @@ function EncryptedPlaceholder({ uri, size }) {
 // ── Post Card ────────────────────────────────────────────────────────────────
 
 function PostCard({ item, currentUsername, isPending, onRequestAccess, token }) {
-  const { colors } = useTheme();
+  const { colors, viewCooldown } = useTheme();
   const isOwner      = item.owner_username === currentUsername;
   const isAuthorized = isOwner || (item.authorized ?? []).includes(currentUsername);
   const initials     = (item.owner_username || '?').slice(0, 2).toUpperCase();
   const IMG_H        = 320;
-  const [decryptedUri, setDecryptedUri] = useState(null);
-  const [decrypting,   setDecrypting]   = useState(false);
+  const [decryptedUri,  setDecryptedUri]  = useState(null);
+  const [decrypting,    setDecrypting]    = useState(false);
+  const [ephemeralSecs, setEphemeralSecs] = useState(5);
 
   const handleTapImage = async () => {
-    if (!isAuthorized || isOwner) return;
+    if (!isAuthorized) return;
     if (decryptedUri) { setDecryptedUri(null); return; } // toggle off
     setDecrypting(true);
     try {
-      const { signed_url } = await API.recordAccess(token, item.image_id, currentUsername);
+      const { signed_url, ephemeral_duration } = await API.recordAccess(token, item.image_id, currentUsername, viewCooldown);
+      setEphemeralSecs(ephemeral_duration ?? item.ephemeralDuration ?? 5);
       setDecryptedUri(signed_url);
-      API.logAccess({
-        imageId:          item.image_id,
-        imageDescription: item.description ?? item.caption ?? '',
-        viewerUsername:   currentUsername,
-        ownerUsername:    item.owner_username,
-      }).catch(() => {});
+      if (!isOwner) {
+        API.logAccess({
+          imageId:          item.image_id,
+          imageDescription: item.description ?? item.caption ?? '',
+          viewerUsername:   currentUsername,
+          ownerUsername:    item.owner_username,
+          token,
+        }).catch(() => {});
+      }
     } catch (e) {
       Alert.alert('Erreur', e.message || 'Impossible de déchiffrer.');
     } finally {
@@ -138,27 +143,23 @@ function PostCard({ item, currentUsername, isPending, onRequestAccess, token }) 
       </View>
 
       {/* Image */}
-      <TouchableOpacity onPress={handleTapImage} activeOpacity={isAuthorized && !isOwner ? 0.85 : 1}>
-        {isOwner && item.preview_uri ? (
-          <Image source={{ uri: item.preview_uri }} style={{ width: '100%', height: IMG_H }} resizeMode="cover"/>
-        ) : (
-          <View>
-            <EncryptedPlaceholder uri={item.preview_uri} size={IMG_H}/>
-            {isAuthorized && !isOwner && (
-              <View style={{ position: 'absolute', bottom: 12, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
-                {decrypting
-                  ? <ActivityIndicator size="small" color="#fff"/>
-                  : <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Appuyer pour déchiffrer</Text>
-                }
-              </View>
-            )}
-          </View>
-        )}
+      <TouchableOpacity onPress={handleTapImage} activeOpacity={isAuthorized ? 0.85 : 1}>
+        <View>
+          <EncryptedPlaceholder uri={item.preview_uri} size={IMG_H}/>
+          {isAuthorized && (
+            <View style={{ position: 'absolute', bottom: 12, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
+              {decrypting
+                ? <ActivityIndicator size="small" color="#fff"/>
+                : <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Appuyer pour déchiffrer</Text>
+              }
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
 
       {/* Ephemeral viewer */}
       {decryptedUri && (
-        <EphemeralViewer uri={decryptedUri} durationSec={5} onClose={() => setDecryptedUri(null)}/>
+        <EphemeralViewer uri={decryptedUri} durationSec={ephemeralSecs} onClose={() => setDecryptedUri(null)}/>
       )}
 
       {/* Footer */}
@@ -213,7 +214,7 @@ function PostCard({ item, currentUsername, isPending, onRequestAccess, token }) 
 
 export default function FeedScreen() {
   const { session }   = useAuth();
-  const { colors }    = useTheme();
+  const { colors, viewCooldown } = useTheme();
   const [posts, setPosts]             = useState([]);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
@@ -226,26 +227,7 @@ export default function FeedScreen() {
       setRefreshing(false);
       return;
     }
-    let { posts: p } = await API.fetchFeed();
-
-    // Supprimer les posts dont l'image n'existe plus sur le serveur
-    if (p.length > 0) {
-      const checks = await Promise.allSettled(
-        p.map(post => API.getPost(session.token, session.username, post.image_id))
-      );
-      const valid = p.filter((_, i) => {
-        const r = checks[i];
-        if (r.status === 'fulfilled') return true;
-        // Supprimer uniquement si le serveur confirme que le post n'existe pas
-        const msg = r.reason?.message ?? '';
-        return !msg.includes('trouvé') && !msg.includes('404');
-      });
-      if (valid.length !== p.length) {
-        API.syncFeed(valid).catch(() => {});
-        p = valid;
-      }
-    }
-
+    const { posts: p } = await API.fetchFeed(session.token, session.username);
     setPosts(p);
     // Marquer les demandes déjà envoyées
     const { photos: shared } = await API.fetchSharedPhotos(null, session.username).catch(() => ({ photos: [] }));
@@ -267,6 +249,7 @@ export default function FeedScreen() {
         imageDescription:  item.description ?? item.caption ?? '',
         ownerUsername:     item.owner_username,
         requesterUsername: session.username,
+        token:             session.token,
       });
       setPendingIds(p => ({ ...p, [item.image_id]: true }));
     } catch (e) {

@@ -115,7 +115,7 @@ export default function ProfileScreen() {
   const { colors, isDark, toggleTheme, viewCooldown, setViewCooldown, COOLDOWN_MIN, COOLDOWN_MAX } = useTheme();
 
   const [displayName, setDisplayName] = useState(session?.username ?? '');
-  const [email,       setEmail]       = useState('alice@secugram.io');
+  const [email,       setEmail]       = useState(session?.email ?? '');
 
   const initials = (displayName || 'U').slice(0, 2).toUpperCase();
 
@@ -206,17 +206,7 @@ export default function ProfileScreen() {
         />
       </View>
 
-      {/* Session */}
-      <View style={{ paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg }}>
-        <Text style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New', letterSpacing: 2, marginBottom: 14 }}>
-          SESSION ACTIVE
-        </Text>
-        <ReadOnlyRow label="USER ID"   value={session?.userId ?? '—'} colors={colors}/>
-        <ReadOnlyRow label="STOCKAGE"  value="Mémoire vive · Non persistant" green colors={colors}/>
-        <ReadOnlyRow label="TOKEN"     value={`${session?.token?.slice(0, 22)}…`} colors={colors}/>
-      </View>
-
-      {/* Préférences */}
+{/* Préférences */}
       <View style={{ paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg }}>
         <Text style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New', letterSpacing: 2, marginBottom: 14 }}>
           PRÉFÉRENCES

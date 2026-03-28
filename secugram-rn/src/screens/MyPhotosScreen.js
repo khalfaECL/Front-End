@@ -48,7 +48,7 @@ const MOCK_MY_PHOTOS = [
 
 // ── Photo Detail Modal ────────────────────────────────────────────────────────
 
-function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemoveUser, onToggleBlock, onGrantRequest, colors }) {
+function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemoveUser, onToggleBlock, onGrantRequest, token, colors }) {
   const [newUser, setNewUser] = useState('');
   const [authorized, setAuthorized] = useState(photo?.authorized ?? []);
   const [tab, setTab] = useState('auth'); // 'auth' | 'history' | 'requests'
@@ -67,15 +67,13 @@ function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemo
   useEffect(() => {
     if (!photo || !visible) return;
     // Recharger l'historique frais depuis AsyncStorage à chaque ouverture
-    API.fetchMyImageHistory(null, photo.owner_username ?? '')
+    API.fetchMyImageHistory(token, photo.owner_username ?? '')
       .then(({ accesses }) => {
         const photoAccesses = accesses.filter(a => a.image_id === photo.image_id);
-        if (photoAccesses.length > 0) {
-          setHistory(photoAccesses.map(a => ({ viewer: a.viewer, date: a.date, type: a.type })));
-        }
+        setHistory(photoAccesses.map(a => ({ viewer: a.viewer, date: a.date, type: a.type })));
       })
       .catch(() => {});
-    API.fetchAccessRequests(photo.owner_username ?? '')
+    API.fetchAccessRequests(photo.owner_username ?? '', token)
       .then(({ requests: r }) => setRequests(r.filter(req => req.image_id === photo.image_id && req.status === 'pending')))
       .catch(() => {});
   }, [photo, visible]);
@@ -584,6 +582,7 @@ export default function MyPhotosScreen() {
         onRemoveUser={handleRemoveUser}
         onToggleBlock={handleToggleBlock}
         onGrantRequest={handleGrantRequest}
+        token={session.token}
         colors={colors}
       />
 
@@ -604,7 +603,7 @@ export default function MyPhotosScreen() {
             access_count: 0,
             history: [],
           };
-          API.addToSessionPhotos(newPhoto, session.username);
+          if (uri) API.savePreviewCache(imageId, uri, session.username).catch(() => {});
           API.addToFeed({ ...newPhoto, owner_username: session.username }).catch(() => {});
           setPhotos(prev => [newPhoto, ...prev]);
           setShowUpload(false);

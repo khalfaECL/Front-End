@@ -278,7 +278,7 @@ export default function SharedScreen() {
     try {
       let viewingPhoto = { ...item };
       if (!session.isDemo) {
-        const { signed_url } = await API.recordAccess(session.token, id, session.username);
+        const { signed_url } = await API.recordAccess(session.token, id, session.username, viewCooldown);
         viewingPhoto = { ...item, preview_uri: signed_url };
         API.logAccess({
           imageId: id,
