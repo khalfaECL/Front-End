@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, Alert, StyleSheet,
+  TextInput, Alert, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { Radius, Spacing } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import * as API from '../api';
 
 // ── Editable Row ──────────────────────────────────────────────────────────────
 
@@ -124,11 +125,39 @@ export default function ProfileScreen() {
     Alert.alert('Mot de passe', 'Mot de passe mis à jour avec succès.');
   };
 
+  const [deleting, setDeleting] = useState(false);
+
   const confirmLogout = () => {
-    Alert.alert('Déconnexion', 'La session sera effacée de la mémoire.', [
+    Alert.alert('Déconnexion', 'Vous allez vous déconnecter, êtes-vous sûr ?', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Se déconnecter', style: 'destructive', onPress: () => logout(session?.token) },
     ]);
+  };
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Supprimer le compte',
+      'Cette action est irréversible. Votre compte et toutes vos images seront définitivement supprimés.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            if (session?.isDemo) { Alert.alert('Demo', 'Impossible en mode démo.'); return; }
+            setDeleting(true);
+            try {
+              await API.deleteAccount(session.username, session.token);
+              logout(null);
+            } catch (e) {
+              Alert.alert('Erreur', e.message || 'Impossible de supprimer le compte.');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -304,20 +333,36 @@ export default function ProfileScreen() {
       </View>
 
       {/* Déconnexion */}
-      <View style={{ paddingHorizontal: Spacing.lg }}>
+      <View style={{ paddingHorizontal: Spacing.lg, paddingBottom: 16 }}>
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255,69,58,0.07)', borderWidth: 1,
             borderColor: 'rgba(255,69,58,0.2)', borderRadius: Radius.xl,
-            paddingVertical: 15, alignItems: 'center', marginBottom: 8,
+            paddingVertical: 15, alignItems: 'center', marginBottom: 12,
           }}
           onPress={confirmLogout} activeOpacity={0.8}
         >
-          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.danger }}>🚪  Se déconnecter</Text>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.danger }}>Se déconnecter</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 10, color: colors.textMut, textAlign: 'center', fontFamily: 'Courier New' }}>
-          La session sera définitivement effacée de la mémoire.
-        </Text>
+
+        <TouchableOpacity
+          style={{
+            backgroundColor: 'transparent', borderWidth: 1,
+            borderColor: 'rgba(255,69,58,0.15)', borderRadius: Radius.xl,
+            paddingVertical: 15, alignItems: 'center',
+            opacity: deleting ? 0.5 : 1,
+          }}
+          onPress={confirmDeleteAccount}
+          disabled={deleting}
+          activeOpacity={0.8}
+        >
+          {deleting
+            ? <ActivityIndicator size="small" color={colors.danger}/>
+            : <Text style={{ fontSize: 13, fontWeight: '600', color: colors.danger, opacity: 0.7 }}>
+                Supprimer mon compte
+              </Text>
+          }
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );

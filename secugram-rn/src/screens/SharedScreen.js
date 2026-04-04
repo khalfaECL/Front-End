@@ -263,7 +263,7 @@ export default function SharedScreen() {
     const last = lastViewedAt[item.image_id];
     if (last) {
       const elapsedMs = Date.now() - last;
-      const cooldownMs = viewCooldown * 60 * 1000;
+      const cooldownMs = (item.viewCooldown ?? 10) * 60 * 1000;
       if (elapsedMs < cooldownMs) {
         const remainMin = Math.ceil((cooldownMs - elapsedMs) / 60000);
         return { ok: false, reason: 'cooldown', remainMin };
@@ -278,7 +278,7 @@ export default function SharedScreen() {
     try {
       let viewingPhoto = { ...item };
       if (!session.isDemo) {
-        const { signed_url } = await API.recordAccess(session.token, id, session.username, viewCooldown);
+        const { signed_url } = await API.recordAccess(session.token, id, session.username, item.viewCooldown ?? 10);
         viewingPhoto = { ...item, preview_uri: signed_url };
         API.logAccess({
           imageId: id,

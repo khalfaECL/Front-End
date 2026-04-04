@@ -48,7 +48,7 @@ async function handleResponse(res) {
     const msg = typeof detail === 'string'
       ? detail
       : Array.isArray(detail)
-        ? detail.map(e => e.msg || JSON.stringify(e)).join(', ')
+        ? detail.map(e => e.loc ? `${e.loc.slice(-1)[0]}: ${e.msg}` : (e.msg || JSON.stringify(e))).join(', ')
         : `Erreur ${res.status}`;
     throw new Error(msg);
   }
@@ -79,6 +79,7 @@ async function fetchWithTimeout(url, options = {}) {
 function normalizeMyPhoto(p) {
   return {
     image_id:          p._id ?? p.image_id,
+    owner_username:    p.owner_username ?? '',
     description:       p.description ?? '',
     date_creation:     p.created_at ?? p.date_creation ?? '',
     preview_uri:       p.preview_url ?? p.preview_uri ?? '',
@@ -86,6 +87,7 @@ function normalizeMyPhoto(p) {
     access_count:      p.access_count ?? 0,
     ephemeralDuration: p.ephemeral_duration ?? p.ephemeralDuration ?? 5,
     maxViews:          p.max_views ?? p.maxViews ?? 3,
+    viewCooldown:      p.view_cooldown ?? p.viewCooldown ?? 10,
     blocked:           p.blocked ?? false,
     history:           (p.history ?? []).map(normalizeHistoryEntry),
   };
@@ -98,11 +100,15 @@ function normalizeSharedPhoto(p) {
   return {
     image_id:          p._id ?? p.image_id,
     owner_username:    p.owner_username,
-    description:       p.description ?? '',
+    description:       p.description ?? p.caption ?? '',
+    caption:           p.caption ?? p.description ?? '',
     date_shared:       p.shared_at ?? p.date_shared ?? '',
+    date_creation:     p.date_creation ?? p.created_at ?? '',
     preview_uri:       p.preview_url ?? p.preview_uri ?? '',
+    authorized:        p.authorized ?? p.autorisations ?? [],
     ephemeralDuration: p.ephemeral_duration ?? p.ephemeralDuration ?? 5,
     maxViews:          p.max_views ?? p.maxViews ?? 3,
+    viewCooldown:      p.view_cooldown ?? p.viewCooldown ?? 10,
     blocked:           p.blocked ?? false,
   };
 }
@@ -188,6 +194,15 @@ export async function logout(token) {
     headers: tdcHeaders(),
     body: JSON.stringify({ token }),
   }).catch(() => {}); // erreur silencieuse — la session mémoire est effacée de toute façon
+}
+
+export async function deleteAccount(username, token) {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/auth/delete_account`, {
+    method: 'DELETE',
+    headers: tdcHeaders(),
+    body: JSON.stringify({ username, token }),
+  });
+  return handleResponse(res);
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -298,10 +313,10 @@ export async function fetchMyPhotos(token, username) {
   });
   const data = await handleResponse(res);
   const cache = await getPreviewCache(username);
-  const photos = (data.photos ?? []).map(p => ({
-    ...p,
-    preview_uri: cache[p.image_id] ?? p.preview_uri ?? null,
-  }));
+  const photos = (data.photos ?? []).map(p => {
+    const n = normalizeMyPhoto(p);
+    return { ...n, preview_uri: cache[n.image_id] ?? n.preview_uri ?? null };
+  });
   return { photos };
 }
 
@@ -393,14 +408,15 @@ export async function extractWatermark(originalAsset, suspectedAsset) {
  *
  * @returns {{ image_id: string, preview_uri: null, authorized: string[] }}
  */
-export async function uploadPhoto(token, { imageAsset, description, authorizedUsers, ephemeralDuration, maxViews }, session) {
+export async function uploadPhoto(token, { imageAsset, description, authorizedUsers, ephemeralDuration, maxViews, viewCooldown }, session) {
   const formData = new FormData();
   formData.append('user_id',            session.userId);
   formData.append('owner_username',     session.username);
   formData.append('token',              token);
-  formData.append('caption',            description ?? '');
+  if (description) formData.append('caption', description);
   formData.append('ephemeral_duration', String(ephemeralDuration ?? 5));
   formData.append('max_views',          String(maxViews ?? 3));
+  formData.append('view_cooldown',      String(viewCooldown ?? 10));
   if (imageAsset.file instanceof Blob) {
     formData.append('image', imageAsset.file, imageAsset.fileName ?? 'photo.jpg');
   } else {
@@ -419,6 +435,7 @@ export async function uploadPhoto(token, { imageAsset, description, authorizedUs
     body:   formData,
   });
   const data = await handleResponse(res);
+  if (authorizedUsers?.length) addSavedContacts(session.username, authorizedUsers).catch(() => {});
   return {
     image_id:    data.image_id,
     preview_uri: null,
@@ -465,6 +482,23 @@ export async function revokeAccess(token, imageId, targetUsername, ownerUsername
  * @param {string[]} authorizedUsers  - liste de usernames
  * @returns {{ success: boolean }}
  */
+// ─── Contacts (utilisateurs déjà autorisés) ──────────────────────────────────
+
+const contactsKey = (username) => `contacts_${username}`;
+
+export async function getSavedContacts(ownerUsername) {
+  if (!ownerUsername) return [];
+  const raw = await AsyncStorage.getItem(contactsKey(ownerUsername));
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function addSavedContacts(ownerUsername, usernames) {
+  if (!ownerUsername || !usernames?.length) return;
+  const existing = await getSavedContacts(ownerUsername);
+  const merged = Array.from(new Set([...existing, ...usernames.map(u => u.trim().toLowerCase()).filter(Boolean)]));
+  await AsyncStorage.setItem(contactsKey(ownerUsername), JSON.stringify(merged));
+}
+
 /**
  * POST /authorize/{image_id}  (Tiers de Confiance)
  * Token dans le body (pas en header).
@@ -479,7 +513,9 @@ export async function authorizePhoto(token, imageId, authorizedUsers, ownerUsern
       authorized_users: authorizedUsers,
     }),
   });
-  return handleResponse(res);
+  const data = await handleResponse(res);
+  addSavedContacts(ownerUsername, authorizedUsers).catch(() => {});
+  return data;
 }
 
 /**
@@ -554,11 +590,11 @@ export async function deletePhoto(token, username, imageId) {
  *   En cas de quota/cooldown/blocage, une erreur HTTP est renvoyée avec
  *   { message, reason: 'quota'|'cooldown'|'blocked', remain_min? }
  */
-export async function recordAccess(token, imageId, username, cooldownMinutes = 0) {
+export async function recordAccess(token, imageId, username, ownerCooldownMinutes = 10) {
   const res = await fetchWithTimeout(`${API_BASE_URL}/posts/${imageId}`, {
     method: 'POST',
     headers: tdcHeaders(),
-    body: JSON.stringify({ username, token, cooldown_minutes: cooldownMinutes }),
+    body: JSON.stringify({ username, token, cooldown_minutes: ownerCooldownMinutes }),
   });
   const data = await handleResponse(res);
   if (!data.decrypted) throw new Error("Accès non autorisé à cette image.");
@@ -653,7 +689,7 @@ export async function fetchFeed(token, username) {
     body: JSON.stringify({ username, token }),
   });
   const data = await handleResponse(res);
-  return { posts: data.posts ?? [] };
+  return { posts: (data.posts ?? []).map(normalizeSharedPhoto) };
 }
 
 // Écrase le cache feed avec une liste filtrée (supprime les posts inexistants)

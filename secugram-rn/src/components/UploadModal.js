@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, ScrollView,
   TouchableOpacity, Image, FlatList, TextInput,
@@ -14,17 +14,22 @@ const STEPS = { IMAGE: 1, AUTH: 2, UPLOADING: 3, DONE: 4 };
 
 export default function UploadModal({ visible, onClose, onSuccess, users }) {
   const { session } = useAuth();
-  const { colors } = useTheme();
+  const { colors, viewCooldown } = useTheme();
 
   const [step,              setStep]              = useState(STEPS.IMAGE);
   const [image,             setImage]             = useState(null);
   const [desc,              setDesc]              = useState('');
   const [selected,          setSelected]          = useState([]);
+  const [contacts,          setContacts]          = useState([]);
   const [progress,          setProgress]          = useState(0);
   const [error,             setError]             = useState('');
   const [uploadedId,        setUploadedId]        = useState(null);
   const [ephemeralDuration, setEphemeralDuration] = useState(5);  // 1–10 s
   const [maxViews,          setMaxViews]          = useState(3);   // 1–20
+
+  useEffect(() => {
+    API.getSavedContacts(session.username).then(setContacts).catch(() => {});
+  }, []);
 
   const EPHEM_MIN = 1; const EPHEM_MAX = 10;
   const VIEWS_MIN = 1; const VIEWS_MAX = 20;
@@ -71,6 +76,7 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
             authorizedUsers:   selected,
             ephemeralDuration,
             maxViews,
+            viewCooldown,
           },
           session,                      // { userId, username } requis par le TdC
         );
@@ -102,7 +108,6 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
         {image
           ? <Image source={{ uri: image.uri }} style={{ width: '100%', height: 180, resizeMode: 'cover' }}/>
           : <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-              <Text style={{ fontSize: 40, marginBottom: 10 }}>📷</Text>
               <Text style={{ fontSize: 14, color: colors.textSec, marginBottom: 4 }}>Appuyer pour choisir</Text>
               <Text style={{ fontSize: 11, color: colors.textMut, fontFamily: 'Courier New' }}>JPG · PNG · WEBP</Text>
             </View>
@@ -120,16 +125,14 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
           DESCRIPTION (OPTIONNEL)
         </Text>
         <View style={{
-          flexDirection: 'row', alignItems: 'center',
           backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
           borderRadius: Radius.md, paddingHorizontal: 14, paddingVertical: 14,
         }}>
-          <Text style={{ fontSize: 16, marginRight: 10 }}>📝</Text>
           <TextInput
-            style={{ flex: 1, fontSize: 15, color: colors.textPri }}
+            style={{ fontSize: 15, color: colors.textPri }}
             value={desc}
             onChangeText={setDesc}
-            placeholder="Vacances Nice 2025..."
+            placeholder="Ajouter un commentaire..."
             placeholderTextColor={colors.textMut}
             autoCorrect={false}
           />
@@ -137,8 +140,8 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
       </View>
 
       <View style={{ flexDirection: 'row', marginTop: 8, marginBottom: 8 }}>
-        <SecondaryButton label="Annuler" icon="✕" onPress={handleClose} style={{ flex: 0.4 }}/>
-        <PrimaryButton label="Suivant" icon="🔐" onPress={() => setStep(STEPS.AUTH)} disabled={!image} style={{ flex: 1, marginLeft: 10 }}/>
+        <SecondaryButton label="Annuler" onPress={handleClose} style={{ flex: 0.4 }}/>
+        <PrimaryButton label="Suivant" onPress={() => setStep(STEPS.AUTH)} disabled={!image} style={{ flex: 1, marginLeft: 10 }}/>
       </View>
     </ScrollView>
   );
@@ -156,6 +159,35 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
       <SectionLabel label="Qui peut voir cette image ?"/>
       <ErrorBox message={error}/>
+
+      {/* Contacts sauvegardés */}
+      {contacts.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          <Text style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New', letterSpacing: 1.5, marginBottom: 8 }}>
+            CONTACTS ENREGISTRÉS
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {contacts.map(u => {
+              const active = selected.includes(u);
+              return (
+                <TouchableOpacity
+                  key={u}
+                  onPress={() => toggleUser(u)}
+                  style={{
+                    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+                    backgroundColor: active ? colors.accent : colors.surface,
+                    borderWidth: 1, borderColor: active ? colors.accent : colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: active ? '#fff' : colors.textSec }}>
+                    {u}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {/* Invite manuelle par identifiant */}
       <View style={{
@@ -342,10 +374,10 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
       </View>
 
       <View style={{ flexDirection: 'row', marginTop: 8, marginBottom: 8 }}>
-        <SecondaryButton label="Retour" icon="←" onPress={() => setStep(STEPS.IMAGE)} style={{ flex: 0.4 }}/>
+        <SecondaryButton label="Retour" onPress={() => setStep(STEPS.IMAGE)} style={{ flex: 0.4 }}/>
         <PrimaryButton
           label={selected.length > 0 ? `Partager (${selected.length})` : 'Déposer'}
-          icon="⬆️" onPress={handleUpload}
+          onPress={handleUpload}
           style={{ flex: 1, marginLeft: 10 }}
         />
       </View>
@@ -354,7 +386,6 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
 
   const renderUploadingStep = () => (
     <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-      <Text style={{ fontSize: 48, marginBottom: 20 }}>⬆️</Text>
       <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPri, marginBottom: 6 }}>Sécurisation en cours...</Text>
       <Text style={{ fontSize: 13, color: colors.textSec, marginBottom: 20, fontFamily: 'Courier New' }}>
         Tatouage invisible · Chiffrement AES-256
@@ -369,7 +400,7 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
           borderColor: 'rgba(0,207,255,0.2)', borderRadius: Radius.md,
           paddingVertical: 10, paddingHorizontal: 18,
         }}>
-          <Text style={{ color: colors.cyan, fontFamily: 'Courier New', fontSize: 12 }}>🔒  Clé AES-256 appliquée</Text>
+          <Text style={{ color: colors.cyan, fontFamily: 'Courier New', fontSize: 12 }}>Clé AES-256 appliquée</Text>
         </View>
       )}
     </View>
@@ -377,7 +408,6 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
 
   const renderDoneStep = () => (
     <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-      <Text style={{ fontSize: 64, marginBottom: 16 }}>🎉</Text>
       <Text style={{ fontSize: 22, fontWeight: '700', color: colors.textPri, marginBottom: 6 }}>Image sécurisée !</Text>
       <Text style={{ fontSize: 13, color: colors.textSec, fontFamily: 'Courier New', marginBottom: 10 }}>
         Tatouage invisible · Chiffrée AES-256
@@ -391,7 +421,7 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
         {selected.map(u => <Chip key={u} label={u}/>)}
       </View>
       <PrimaryButton
-        label="Parfait !" icon="✓"
+        label="Parfait !"
         onPress={() => {
           onSuccess({ imageId: uploadedId, uri: image?.uri, description: desc, authorized: selected, ephemeralDuration, maxViews });
           handleClose();
@@ -416,10 +446,10 @@ export default function UploadModal({ visible, onClose, onSuccess, users }) {
           paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md,
           borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: Spacing.md,
         }}>
-          {step === STEPS.IMAGE     && '📸 Déposer une image'}
-          {step === STEPS.AUTH      && "🔐 Autorisations d'accès"}
-          {step === STEPS.UPLOADING && '⬆️  Envoi en cours...'}
-          {step === STEPS.DONE      && '✅ Succès'}
+          {step === STEPS.IMAGE     && 'Déposer une image'}
+          {step === STEPS.AUTH      && "Autorisations d'accès"}
+          {step === STEPS.UPLOADING && 'Envoi en cours...'}
+          {step === STEPS.DONE      && 'Succès'}
         </Text>
         <View style={{ paddingHorizontal: Spacing.lg }}>
           {step === STEPS.IMAGE     && renderImageStep()}

@@ -5,7 +5,7 @@ import * as API from '../../api';
 
 const MOCK_MY_PHOTOS = [
   {
-    image_id: 'img_001', description: 'Vacances Nice 2025',
+    image_id: 'img_001', owner_username: 'youssef', description: 'Vacances Nice 2025',
     date_creation: '26 fev. 2025',
     preview_uri: 'https://picsum.photos/seed/beach/400/400',
     authorized: ['khakfa_youssef', 'chammakhi_malak'], access_count: 3,
@@ -17,7 +17,7 @@ const MOCK_MY_PHOTOS = [
     ],
   },
   {
-    image_id: 'img_002', description: 'Randonnee Vercors',
+    image_id: 'img_002', owner_username: 'youssef', description: 'Randonnee Vercors',
     date_creation: '3 mars 2025',
     preview_uri: 'https://picsum.photos/seed/forest/400/400',
     authorized: ['krid_amani'], access_count: 1,
@@ -30,8 +30,11 @@ const MOCK_MY_PHOTOS = [
 
 function UploadModal({ onClose, onSuccess, colors }) {
   const { session } = useAuth();
+  const { viewCooldown } = useTheme();
   const [description, setDescription] = useState('');
   const [authorizedInput, setAuthorizedInput] = useState('');
+  const [authorizedList, setAuthorizedList] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [ephemeralDuration, setEphemeralDuration] = useState(5);
   const [maxViews, setMaxViews] = useState(3);
   const [uploading, setUploading] = useState(false);
@@ -39,6 +42,20 @@ function UploadModal({ onClose, onSuccess, colors }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUri, setPreviewUri] = useState(null);
   const fileRef = useRef();
+
+  useEffect(() => {
+    API.getSavedContacts(session.username).then(setContacts).catch(() => {});
+  }, []);
+
+  const toggleContact = (u) =>
+    setAuthorizedList(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]);
+
+  const addFromInput = () => {
+    const users = authorizedInput.split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
+    if (!users.length) return;
+    setAuthorizedList(prev => Array.from(new Set([...prev, ...users])));
+    setAuthorizedInput('');
+  };
 
   const EPHEM_MIN = 1; const EPHEM_MAX = 10;
   const VIEWS_MIN = 1; const VIEWS_MAX = 20;
@@ -58,10 +75,8 @@ function UploadModal({ onClose, onSuccess, colors }) {
     setUploading(true);
     setError('');
     try {
-      const authorizedUsers = authorizedInput
-        .split(',')
-        .map(u => u.trim().toLowerCase())
-        .filter(Boolean);
+      const extra = authorizedInput.split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
+      const authorizedUsers = Array.from(new Set([...authorizedList, ...extra]));
 
       let imageId, uri;
       if (session.isDemo) {
@@ -76,7 +91,7 @@ function UploadModal({ onClose, onSuccess, colors }) {
         };
         const data = await API.uploadPhoto(
           session.token,
-          { imageAsset, description, authorizedUsers, ephemeralDuration, maxViews },
+          { imageAsset, description, authorizedUsers, ephemeralDuration, maxViews, viewCooldown },
           { userId: session.userId, username: session.username }
         );
         imageId = data.image_id;
@@ -126,6 +141,8 @@ function UploadModal({ onClose, onSuccess, colors }) {
         borderRadius: 18,
         padding: '28px 28px 24px',
         width: '100%', maxWidth: 440,
+        maxHeight: '90vh',
+        overflowY: 'auto',
         boxSizing: 'border-box',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
@@ -189,16 +206,56 @@ function UploadModal({ onClose, onSuccess, colors }) {
 
           {/* Authorized users */}
           <div style={{ marginBottom: 18 }}>
-            <label style={{ display: 'block', fontSize: 10, fontFamily: 'Courier New, monospace', letterSpacing: 2, color: colors.textSec, marginBottom: 5 }}>
-              UTILISATEURS AUTORISES (identifiants, separes par virgule)
+            <label style={{ display: 'block', fontSize: 10, fontFamily: 'Courier New, monospace', letterSpacing: 2, color: colors.textSec, marginBottom: 8 }}>
+              UTILISATEURS AUTORISES
             </label>
-            <input
-              type="text"
-              value={authorizedInput}
-              onChange={e => setAuthorizedInput(e.target.value)}
-              placeholder="alice, bob, charlie..."
-              style={inputStyle}
-            />
+            {/* Contacts sauvegardés */}
+            {contacts.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {contacts.map(u => {
+                  const active = authorizedList.includes(u);
+                  return (
+                    <button key={u} onClick={() => toggleContact(u)} type="button" style={{
+                      padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: '600', cursor: 'pointer',
+                      backgroundColor: active ? colors.accent : colors.surface,
+                      color: active ? '#fff' : colors.textSec,
+                      border: `1px solid ${active ? colors.accent : colors.border}`,
+                    }}>{u}</button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Chips sélectionnés */}
+            {authorizedList.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {authorizedList.map(u => (
+                  <span key={u} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '3px 8px', borderRadius: 20, fontSize: 11,
+                    backgroundColor: colors.accentDim, color: colors.accent,
+                    border: '1px solid rgba(255,107,0,0.3)',
+                  }}>
+                    {u}
+                    <span onClick={() => toggleContact(u)} style={{ cursor: 'pointer', fontWeight: '700', marginLeft: 2 }}>×</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* Saisie manuelle */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                value={authorizedInput}
+                onChange={e => setAuthorizedInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addFromInput())}
+                placeholder="Ajouter un identifiant..."
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button type="button" onClick={addFromInput} style={{
+                padding: '0 14px', backgroundColor: colors.surface, border: `1px solid ${colors.border}`,
+                borderRadius: 8, color: colors.textSec, cursor: 'pointer', fontSize: 18, fontWeight: '300',
+              }}>+</button>
+            </div>
           </div>
 
           {/* Durée d'affichage */}
@@ -282,46 +339,70 @@ function UploadModal({ onClose, onSuccess, colors }) {
 
 // ── Photo Detail Panel ────────────────────────────────────────────────────────
 
-function PhotoDetailPanel({ photo, onClose, onDelete, onAddUser, onRemoveUser, onToggleBlock, onGrantRequest, colors }) {
+function PhotoDetailPanel({ photo, token, ownerUsername, onClose, onDelete, onAddUser, onRemoveUser, onToggleBlock, onGrantRequest, onUpdateCount, colors }) {
   const [tab, setTab] = useState('auth');
-  const [newUser, setNewUser] = useState('');
   const [authorized, setAuthorized] = useState(photo?.authorized ?? []);
   const [history, setHistory] = useState(photo?.history ?? []);
   const [requests, setRequests] = useState([]);
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerInput, setPickerInput] = useState('');
+  const [decryptedUri, setDecryptedUri] = useState(null);
+  const [decrypting, setDecrypting] = useState(false);
+  const [contacts, setContacts] = useState([]);
+  const loadedForRef = useRef(null);
+
+  useEffect(() => {
+    API.getSavedContacts(ownerUsername).then(setContacts).catch(() => {});
+  }, [ownerUsername]);
 
   useEffect(() => {
     if (!photo) return;
+    if (photo.image_id === loadedForRef.current) return;
+    loadedForRef.current = photo.image_id;
     setAuthorized(photo.authorized ?? []);
-    setHistory(photo.history ?? []);
+    setHistory([]);
+    setRequests([]);
+    setDecryptedUri(null);
     setTab('auth');
+    setShowPicker(false);
+    setPickerInput('');
 
-    API.fetchMyImageHistory(null, photo.owner_username ?? '')
+    API.fetchMyImageHistory(token, ownerUsername)
       .then(({ accesses }) => {
         const photoAccesses = accesses.filter(a => a.image_id === photo.image_id);
         if (photoAccesses.length > 0) {
           setHistory(photoAccesses.map(a => ({ viewer: a.viewer, date: a.date, type: a.type })));
+          onUpdateCount?.(photo.image_id, photoAccesses.length);
+        } else {
+          setHistory(photo.history ?? []);
         }
       })
-      .catch(() => {});
+      .catch(() => { setHistory(photo.history ?? []); });
 
-    API.fetchAccessRequests(photo.owner_username ?? '')
+    API.fetchAccessRequests(ownerUsername, token)
       .then(({ requests: r }) => setRequests(r.filter(req => req.image_id === photo.image_id && req.status === 'pending')))
       .catch(() => {});
   }, [photo]);
 
   if (!photo) return null;
 
-  const addUser = async () => {
-    const u = newUser.trim().toLowerCase();
-    if (!u || authorized.includes(u)) { setNewUser(''); return; }
+  const addUser = async (u) => {
+    const username = (u ?? pickerInput).trim().toLowerCase();
+    if (!username || authorized.includes(username)) {
+      if (!u) setPickerInput('');
+      return;
+    }
     setAddLoading(true);
     setAddError('');
     try {
-      await onAddUser(photo.image_id, u);
-      setAuthorized(prev => [...prev, u]);
-      setNewUser('');
+      await onAddUser(photo.image_id, username);
+      setAuthorized(prev => [...prev, username]);
+      setContacts(prev => prev.includes(username) ? prev : [...prev, username]);
+      API.addSavedContacts(ownerUsername, [username]).catch(() => {});
+      setPickerInput('');
+      setShowPicker(false);
     } catch (e) {
       setAddError(e.message || 'Utilisateur introuvable.');
     } finally {
@@ -336,7 +417,7 @@ function PhotoDetailPanel({ photo, onClose, onDelete, onAddUser, onRemoveUser, o
 
   const TABS = [
     ['auth', 'Autorisations'],
-    ['history', 'Historique'],
+    ['history', 'Consultations'],
     ['requests', `Demandes${requests.length > 0 ? ` (${requests.length})` : ''}`],
   ];
 
@@ -385,13 +466,47 @@ function PhotoDetailPanel({ photo, onClose, onDelete, onAddUser, onRemoveUser, o
           </div>
         </div>
 
-        {/* Preview */}
-        {photo.preview_uri && (
-          <img
-            src={photo.preview_uri}
-            alt={photo.description}
-            style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block', opacity: photo.blocked ? 0.45 : 1 }}
-          />
+        {/* Preview / Déchiffrement owner */}
+        {decryptedUri ? (
+          <div style={{ position: 'relative' }}>
+            <img
+              src={decryptedUri}
+              alt={photo.description}
+              style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
+            />
+            <button
+              onClick={() => setDecryptedUri(null)}
+              style={{
+                position: 'absolute', top: 8, right: 8,
+                background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: 6,
+                color: '#fff', fontSize: 11, padding: '4px 8px', cursor: 'pointer',
+              }}
+            >Masquer</button>
+          </div>
+        ) : (
+          <div style={{
+            width: '100%', height: 200, backgroundColor: '#080810',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+          }}>
+            <span style={{ fontSize: 32, color: 'rgba(255,255,255,0.15)' }}>[lock]</span>
+            <button
+              onClick={async () => {
+                setDecrypting(true);
+                try {
+                  const { signed_url } = await API.recordAccess(token, photo.image_id, ownerUsername);
+                  setDecryptedUri(signed_url);
+                } catch (e) { /* silently ignore */ }
+                finally { setDecrypting(false); }
+              }}
+              disabled={decrypting}
+              style={{
+                padding: '6px 16px', fontSize: 11, fontWeight: '700',
+                backgroundColor: colors.accent, color: '#fff',
+                border: 'none', borderRadius: 8, cursor: decrypting ? 'wait' : 'pointer',
+                fontFamily: 'Courier New, monospace', letterSpacing: 1,
+              }}
+            >{decrypting ? 'Dechiffrement...' : 'Voir'}</button>
+          </div>
         )}
 
         <div style={{ padding: '16px 20px', flex: 1 }}>
@@ -453,43 +568,97 @@ function PhotoDetailPanel({ photo, onClose, onDelete, onAddUser, onRemoveUser, o
           {/* Auth tab */}
           {tab === 'auth' && (
             <div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <input
-                  type="text"
-                  value={newUser}
-                  onChange={e => { setNewUser(e.target.value); setAddError(''); }}
-                  placeholder="Ajouter par identifiant..."
-                  onKeyDown={e => e.key === 'Enter' && addUser()}
-                  style={{
-                    flex: 1,
-                    padding: '9px 12px',
+              {/* Bouton ajouter + picker */}
+              <div style={{ marginBottom: 12 }}>
+                {!showPicker ? (
+                  <button
+                    onClick={() => { setShowPicker(true); setAddError(''); }}
+                    style={{
+                      width: '100%', padding: '10px', display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', gap: 8,
+                      backgroundColor: colors.accentDim,
+                      border: `1px solid ${colors.accent}`,
+                      borderRadius: 10, cursor: 'pointer', color: colors.accent,
+                      fontSize: 13, fontWeight: '600', fontFamily: 'inherit',
+                    }}
+                  >
+                    <span style={{ fontSize: 16, fontWeight: '300' }}>+</span>
+                    Ajouter une personne
+                  </button>
+                ) : (
+                  <div style={{
                     backgroundColor: colors.surface,
-                    border: `1px solid ${addError ? 'rgba(255,69,58,0.5)' : colors.border}`,
-                    borderRadius: 8,
-                    color: colors.textPri,
-                    fontSize: 13,
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                  }}
-                />
-                <button
-                  onClick={addUser}
-                  disabled={!newUser.trim() || addLoading}
-                  style={{
-                    padding: '9px 16px',
-                    backgroundColor: newUser.trim() && !addLoading ? colors.accent : colors.border,
-                    border: 'none',
-                    borderRadius: 8,
-                    color: '#fff',
-                    fontWeight: '700',
-                    cursor: !newUser.trim() || addLoading ? 'not-allowed' : 'pointer',
-                    fontSize: 14,
-                  }}
-                >
-                  +
-                </button>
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 12, padding: '14px',
+                  }}>
+                    {/* Contacts sauvegardés */}
+                    {contacts.filter(u => !authorized.includes(u)).length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New, monospace', letterSpacing: 2, marginBottom: 8 }}>
+                          CONTACTS ENREGISTRÉS
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {contacts.filter(u => !authorized.includes(u)).map(u => (
+                            <button
+                              key={u} type="button"
+                              onClick={() => addUser(u)}
+                              disabled={addLoading}
+                              style={{
+                                padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: '600',
+                                cursor: 'pointer', backgroundColor: colors.accentDim, color: colors.accent,
+                                border: `1px solid ${colors.accent}`, fontFamily: 'inherit',
+                              }}
+                            >{u}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Saisie manuelle */}
+                    <div style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New, monospace', letterSpacing: 2, marginBottom: 8 }}>
+                      PAR IDENTIFIANT
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={pickerInput}
+                        onChange={e => { setPickerInput(e.target.value); setAddError(''); }}
+                        placeholder="Identifiant..."
+                        onKeyDown={e => e.key === 'Enter' && addUser()}
+                        style={{
+                          flex: 1, padding: '8px 12px',
+                          backgroundColor: colors.card,
+                          border: `1px solid ${addError ? 'rgba(255,69,58,0.5)' : colors.border}`,
+                          borderRadius: 8, color: colors.textPri, fontSize: 13,
+                          outline: 'none', fontFamily: 'inherit',
+                        }}
+                      />
+                      <button
+                        onClick={() => addUser()}
+                        disabled={!pickerInput.trim() || addLoading}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: pickerInput.trim() && !addLoading ? colors.accent : colors.border,
+                          border: 'none', borderRadius: 8, color: '#fff',
+                          fontWeight: '700', fontSize: 14, fontFamily: 'inherit',
+                          cursor: !pickerInput.trim() || addLoading ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {addLoading ? '...' : '+'}
+                      </button>
+                    </div>
+                    {addError && <p style={{ fontSize: 11, color: colors.danger, margin: '6px 0 0' }}>{addError}</p>}
+                    <button
+                      onClick={() => { setShowPicker(false); setPickerInput(''); setAddError(''); }}
+                      style={{
+                        marginTop: 10, width: '100%', padding: '6px', background: 'none',
+                        border: 'none', color: colors.textSec, fontSize: 12, cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >Annuler</button>
+                  </div>
+                )}
               </div>
-              {addError && <p style={{ fontSize: 11, color: colors.danger, margin: '0 0 10px' }}>{addError}</p>}
 
               {authorized.length === 0 ? (
                 <p style={{ color: colors.textMut, fontFamily: 'Courier New, monospace', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
@@ -747,7 +916,12 @@ export default function MyPhotosPage() {
   useEffect(() => {
     if (session.isDemo) { setPhotos(MOCK_MY_PHOTOS); return; }
     API.fetchMyPhotos(session.token, session.username)
-      .then(({ photos: p }) => setPhotos(p))
+      .then(({ photos: p }) => {
+        setPhotos(p);
+        // Pre-populate saved contacts from all existing authorized lists
+        const allAuthorized = p.flatMap(ph => ph.authorized ?? []).filter(Boolean);
+        if (allAuthorized.length) API.addSavedContacts(session.username, allAuthorized).catch(() => {});
+      })
       .catch(() => {});
   }, []);
 
@@ -805,6 +979,10 @@ export default function MyPhotosPage() {
     if (!session.isDemo) API.setPhotoBlocked(session.token, imageId, newBlocked).catch(() => {});
   };
 
+  const handleUpdateCount = (imageId, count) => {
+    setPhotos(p => p.map(x => x.image_id === imageId ? { ...x, access_count: count } : x));
+  };
+
   return (
     <div style={{ padding: '24px 28px' }}>
       {/* Header */}
@@ -854,12 +1032,15 @@ export default function MyPhotosPage() {
       {selected && (
         <PhotoDetailPanel
           photo={selected}
+          token={session.token}
+          ownerUsername={session.username}
           onClose={() => setSelected(null)}
           onDelete={handleDelete}
           onAddUser={handleAddUser}
           onRemoveUser={handleRemoveUser}
           onToggleBlock={handleToggleBlock}
           onGrantRequest={handleGrantRequest}
+          onUpdateCount={handleUpdateCount}
           colors={colors}
         />
       )}

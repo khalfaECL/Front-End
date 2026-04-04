@@ -97,7 +97,7 @@ function PostCard({ item, currentUsername, isPending, onRequestAccess, token }) 
     if (decryptedUri) { setDecryptedUri(null); return; } // toggle off
     setDecrypting(true);
     try {
-      const { signed_url, ephemeral_duration } = await API.recordAccess(token, item.image_id, currentUsername, viewCooldown);
+      const { signed_url, ephemeral_duration } = await API.recordAccess(token, item.image_id, currentUsername, item.viewCooldown ?? 10);
       setEphemeralSecs(ephemeral_duration ?? item.ephemeralDuration ?? 5);
       setDecryptedUri(signed_url);
       if (!isOwner) {

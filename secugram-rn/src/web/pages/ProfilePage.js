@@ -1,15 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
+import * as API from '../../api';
 
 export default function ProfilePage() {
   const { session, logout } = useAuth();
   const { colors, isDark, toggleTheme, viewCooldown, setViewCooldown, COOLDOWN_MIN, COOLDOWN_MAX } = useTheme();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const initials = (session?.username || '?').slice(0, 2).toUpperCase();
 
   const handleLogout = () => {
     logout(session?.token);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (session?.isDemo) { setDeleteError('Impossible en mode démo.'); return; }
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await API.deleteAccount(session.username, session.token);
+      logout(null);
+    } catch (e) {
+      setDeleteError(e.message || 'Impossible de supprimer le compte.');
+      setDeleting(false);
+    }
   };
 
   const infoRow = (label, value) => (
@@ -201,7 +218,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Logout card */}
+      {/* Logout + delete card */}
       <div style={{
         backgroundColor: colors.card,
         border: `1px solid ${colors.border}`,
@@ -210,7 +227,7 @@ export default function ProfilePage() {
       }}>
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: '600', color: colors.textPri, marginBottom: 3 }}>
-            Deconnexion
+            Session
           </div>
           <div style={{ fontSize: 12, color: colors.textSec }}>
             La session sera effacee. Le token sera invalide cote serveur.
@@ -229,10 +246,82 @@ export default function ProfilePage() {
             cursor: 'pointer',
             fontFamily: 'Courier New, monospace',
             letterSpacing: 1,
+            marginBottom: 20,
           }}
         >
           SE DECONNECTER
         </button>
+
+        <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: '600', color: colors.danger, marginBottom: 4, opacity: 0.85 }}>
+            Zone de danger
+          </div>
+          <div style={{ fontSize: 12, color: colors.textSec, marginBottom: 14 }}>
+            Supprime définitivement votre compte et toutes vos images. Action irréversible.
+          </div>
+
+          {!confirmOpen ? (
+            <button
+              onClick={() => setConfirmOpen(true)}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255,69,58,0.25)',
+                borderRadius: 10,
+                color: colors.danger,
+                fontSize: 12,
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                opacity: 0.75,
+              }}
+            >
+              Supprimer mon compte
+            </button>
+          ) : (
+            <div style={{
+              backgroundColor: 'rgba(255,69,58,0.06)',
+              border: '1px solid rgba(255,69,58,0.25)',
+              borderRadius: 12,
+              padding: '16px',
+            }}>
+              <div style={{ fontSize: 13, color: colors.danger, fontWeight: '600', marginBottom: 12 }}>
+                Confirmer la suppression ?
+              </div>
+              {deleteError && (
+                <div style={{ fontSize: 12, color: colors.danger, marginBottom: 10 }}>{deleteError}</div>
+              )}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => { setConfirmOpen(false); setDeleteError(''); }}
+                  style={{
+                    flex: 1, padding: '10px',
+                    backgroundColor: colors.surface,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 8, color: colors.textSec,
+                    fontSize: 13, fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                  style={{
+                    flex: 1, padding: '10px',
+                    backgroundColor: 'rgba(255,69,58,0.12)',
+                    border: '1px solid rgba(255,69,58,0.4)',
+                    borderRadius: 8, color: colors.danger,
+                    fontSize: 13, fontWeight: '700', cursor: deleting ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit', opacity: deleting ? 0.5 : 1,
+                  }}
+                >
+                  {deleting ? 'Suppression...' : 'Confirmer'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

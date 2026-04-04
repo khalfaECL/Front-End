@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, Image,
   Modal, ScrollView, TextInput, Alert, Dimensions, ActivityIndicator,
@@ -15,7 +15,7 @@ const CARD = (width - 48) / 2;
 
 const MOCK_MY_PHOTOS = [
   {
-    image_id: 'img_001', description: 'Vacances Nice 2025 🌊',
+    image_id: 'img_001', owner_username: 'youssef', description: 'Vacances Nice 2025 🌊',
     date_creation: '26 fév. 2025',
     preview_uri: 'https://picsum.photos/seed/beach/400/400',
     authorized: ['khakfa_youssef', 'chammakhi_malak'], access_count: 3,
@@ -28,7 +28,7 @@ const MOCK_MY_PHOTOS = [
     ],
   },
   {
-    image_id: 'img_002', description: 'Randonnée Vercors 🌲',
+    image_id: 'img_002', owner_username: 'youssef', description: 'Randonnée Vercors 🌲',
     date_creation: '3 mars 2025',
     preview_uri: 'https://picsum.photos/seed/forest/400/400',
     authorized: ['krid_amani'], access_count: 1,
@@ -38,7 +38,7 @@ const MOCK_MY_PHOTOS = [
     ],
   },
   {
-    image_id: 'img_003', description: 'Conférence Lyon ☕',
+    image_id: 'img_003', owner_username: 'youssef', description: 'Conférence Lyon ☕',
     date_creation: '8 mars 2025',
     preview_uri: 'https://picsum.photos/seed/city/400/400',
     authorized: [], access_count: 0, ephemeralDuration: 5, maxViews: 3, history: [],
@@ -48,47 +48,62 @@ const MOCK_MY_PHOTOS = [
 
 // ── Photo Detail Modal ────────────────────────────────────────────────────────
 
-function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemoveUser, onToggleBlock, onGrantRequest, token, colors }) {
-  const [newUser, setNewUser] = useState('');
+function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemoveUser, onToggleBlock, onGrantRequest, onUpdateCount, token, ownerUsername, colors }) {
   const [authorized, setAuthorized] = useState(photo?.authorized ?? []);
   const [tab, setTab] = useState('auth'); // 'auth' | 'history' | 'requests'
   const [history, setHistory] = useState(photo?.history ?? []);
   const [requests, setRequests] = useState([]);
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError]     = useState('');
-
-  useEffect(() => {
-    if (photo) {
-      setAuthorized(photo.authorized ?? []);
-      setHistory(photo.history ?? []);
-    }
-  }, [photo]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerInput, setPickerInput] = useState('');
+  const [contacts, setContacts] = useState([]);
+  const loadedForRef = useRef(null); // image_id pour lequel on a déjà chargé
 
   useEffect(() => {
     if (!photo || !visible) return;
-    // Recharger l'historique frais depuis AsyncStorage à chaque ouverture
-    API.fetchMyImageHistory(token, photo.owner_username ?? '')
+    if (photo.image_id === loadedForRef.current) return; // même photo, pas de reset
+    loadedForRef.current = photo.image_id;
+    setAuthorized(photo.authorized ?? []);
+    setTab('auth');
+    setHistory([]);
+    setRequests([]);
+    setShowPicker(false);
+    setPickerInput('');
+    API.getSavedContacts(ownerUsername).then(setContacts).catch(() => {});
+    API.fetchMyImageHistory(token, ownerUsername)
       .then(({ accesses }) => {
         const photoAccesses = accesses.filter(a => a.image_id === photo.image_id);
-        setHistory(photoAccesses.map(a => ({ viewer: a.viewer, date: a.date, type: a.type })));
+        if (photoAccesses.length > 0) {
+          setHistory(photoAccesses.map(a => ({ viewer: a.viewer, date: a.date, type: a.type })));
+          onUpdateCount?.(photo.image_id, photoAccesses.length);
+        } else {
+          setHistory(photo.history ?? []);
+        }
       })
-      .catch(() => {});
-    API.fetchAccessRequests(photo.owner_username ?? '', token)
+      .catch(() => { setHistory(photo.history ?? []); });
+    API.fetchAccessRequests(ownerUsername, token)
       .then(({ requests: r }) => setRequests(r.filter(req => req.image_id === photo.image_id && req.status === 'pending')))
       .catch(() => {});
   }, [photo, visible]);
 
   if (!photo) return null;
 
-  const addUser = async () => {
-    const u = newUser.trim().toLowerCase();
-    if (!u || authorized.includes(u)) { setNewUser(''); return; }
+  const addUser = async (u) => {
+    const username = (u ?? pickerInput).trim().toLowerCase();
+    if (!username || authorized.includes(username)) {
+      if (!u) setPickerInput('');
+      return;
+    }
     setAddLoading(true);
     setAddError('');
     try {
-      await onAddUser(photo.image_id, u);
-      setAuthorized(prev => [...prev, u]);
-      setNewUser('');
+      await onAddUser(photo.image_id, username);
+      setAuthorized(prev => [...prev, username]);
+      setContacts(prev => prev.includes(username) ? prev : [...prev, username]);
+      API.addSavedContacts(ownerUsername, [username]).catch(() => {});
+      setPickerInput('');
+      setShowPicker(false);
     } catch (e) {
       setAddError(e.message || 'Utilisateur introuvable.');
     } finally {
@@ -130,7 +145,7 @@ function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemo
 
             {/* Tabs */}
             <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: Radius.full, padding: 3, marginBottom: 20 }}>
-              {[['auth', 'Autorisations'], ['history', 'Historique'], ['requests', `Demandes${requests.length > 0 ? ` (${requests.length})` : ''}`]].map(([key, label]) => (
+              {[['auth', 'Autorisations'], ['history', 'Consultations'], ['requests', `Demandes${requests.length > 0 ? ` (${requests.length})` : ''}`]].map(([key, label]) => (
                 <TouchableOpacity
                   key={key}
                   style={[{ flex: 1, paddingVertical: 9, borderRadius: Radius.full, alignItems: 'center' },
@@ -169,42 +184,94 @@ function PhotoDetailModal({ photo, visible, onClose, onDelete, onAddUser, onRemo
                   PERSONNES AUTORISÉES
                 </Text>
 
-                {/* Add by identifier */}
+                {/* Bouton ajouter + picker inline */}
                 <View style={{ marginBottom: 14 }}>
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 8,
-                    backgroundColor: colors.surface, borderRadius: Radius.lg,
-                    borderWidth: 1, borderColor: addError ? 'rgba(255,69,58,0.5)' : colors.border,
-                    paddingHorizontal: 14, paddingVertical: 10,
-                  }}>
-                    <TextInput
-                      style={{ flex: 1, fontSize: 14, color: colors.textPri }}
-                      placeholder="Ajouter par identifiant..."
-                      placeholderTextColor={colors.textMut}
-                      value={newUser}
-                      onChangeText={t => { setNewUser(t); setAddError(''); }}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      onSubmitEditing={addUser}
-                      returnKeyType="done"
-                      editable={!addLoading}
-                    />
+                  {!showPicker ? (
                     <TouchableOpacity
+                      onPress={() => { setShowPicker(true); setAddError(''); }}
                       style={{
-                        backgroundColor: newUser.trim() && !addLoading ? colors.accent : colors.border,
-                        borderRadius: Radius.sm, paddingHorizontal: 14, paddingVertical: 6,
-                        minWidth: 36, alignItems: 'center',
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        backgroundColor: colors.accentDim,
+                        borderWidth: 1, borderColor: colors.accent,
+                        borderRadius: Radius.lg, paddingVertical: 11,
                       }}
-                      onPress={addUser} disabled={!newUser.trim() || addLoading}
                     >
-                      {addLoading
-                        ? <ActivityIndicator size="small" color="#fff"/>
-                        : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>+</Text>
-                      }
+                      <Text style={{ fontSize: 16, color: colors.accent, fontWeight: '300' }}>+</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.accent }}>Ajouter une personne</Text>
                     </TouchableOpacity>
-                  </View>
-                  {!!addError && (
-                    <Text style={{ fontSize: 11, color: colors.danger, marginTop: 5, marginLeft: 4 }}>{addError}</Text>
+                  ) : (
+                    <View style={{
+                      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+                      borderRadius: Radius.lg, padding: 14,
+                    }}>
+                      {/* Contacts sauvegardés */}
+                      {contacts.filter(u => !authorized.includes(u)).length > 0 && (
+                        <View style={{ marginBottom: 12 }}>
+                          <Text style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New', letterSpacing: 1.5, marginBottom: 8 }}>
+                            CONTACTS ENREGISTRÉS
+                          </Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {contacts.filter(u => !authorized.includes(u)).map(u => (
+                              <TouchableOpacity
+                                key={u}
+                                onPress={() => addUser(u)}
+                                disabled={addLoading}
+                                style={{
+                                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+                                  backgroundColor: colors.accentDim,
+                                  borderWidth: 1, borderColor: colors.accent,
+                                }}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.accent }}>{u}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                      {/* Saisie manuelle */}
+                      <Text style={{ fontSize: 10, color: colors.textSec, fontFamily: 'Courier New', letterSpacing: 1.5, marginBottom: 8 }}>
+                        PAR IDENTIFIANT
+                      </Text>
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 8,
+                        backgroundColor: colors.card, borderRadius: Radius.md,
+                        borderWidth: 1, borderColor: addError ? 'rgba(255,69,58,0.5)' : colors.border,
+                        paddingHorizontal: 12, paddingVertical: 8,
+                      }}>
+                        <TextInput
+                          style={{ flex: 1, fontSize: 14, color: colors.textPri }}
+                          placeholder="Identifiant..."
+                          placeholderTextColor={colors.textMut}
+                          value={pickerInput}
+                          onChangeText={t => { setPickerInput(t); setAddError(''); }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          onSubmitEditing={() => addUser()}
+                          returnKeyType="done"
+                          editable={!addLoading}
+                          autoFocus
+                        />
+                        <TouchableOpacity
+                          style={{
+                            backgroundColor: pickerInput.trim() && !addLoading ? colors.accent : colors.border,
+                            borderRadius: Radius.sm, paddingHorizontal: 14, paddingVertical: 6,
+                            minWidth: 36, alignItems: 'center',
+                          }}
+                          onPress={() => addUser()} disabled={!pickerInput.trim() || addLoading}
+                        >
+                          {addLoading
+                            ? <ActivityIndicator size="small" color="#fff"/>
+                            : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>+</Text>
+                          }
+                        </TouchableOpacity>
+                      </View>
+                      {!!addError && (
+                        <Text style={{ fontSize: 11, color: colors.danger, marginTop: 5 }}>{addError}</Text>
+                      )}
+                      <TouchableOpacity onPress={() => { setShowPicker(false); setPickerInput(''); setAddError(''); }} style={{ marginTop: 10, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 12, color: colors.textSec }}>Annuler</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
 
@@ -470,7 +537,11 @@ export default function MyPhotosScreen() {
       return;
     }
     API.fetchMyPhotos(session.token, session.username)
-      .then(({ photos: p }) => setPhotos(p))
+      .then(({ photos: p }) => {
+        setPhotos(p);
+        const allAuthorized = p.flatMap(ph => ph.authorized ?? []).filter(Boolean);
+        if (allAuthorized.length) API.addSavedContacts(session.username, allAuthorized).catch(() => {});
+      })
       .catch(() => {});
     API.fetchUsers(session.token)
       .then(({ users }) => setKnownUsers(users))
@@ -524,6 +595,10 @@ export default function MyPhotosScreen() {
     setPhotos(p => p.map(x => x.image_id === imageId ? { ...x, blocked: newBlocked } : x));
     setSelected(s => s ? { ...s, blocked: newBlocked } : s);
     if (!session.isDemo) API.setPhotoBlocked(session.token, imageId, newBlocked).catch(() => {});
+  };
+
+  const handleUpdateCount = (imageId, count) => {
+    setPhotos(p => p.map(x => x.image_id === imageId ? { ...x, access_count: count } : x));
   };
 
   return (
@@ -582,7 +657,9 @@ export default function MyPhotosScreen() {
         onRemoveUser={handleRemoveUser}
         onToggleBlock={handleToggleBlock}
         onGrantRequest={handleGrantRequest}
+        onUpdateCount={handleUpdateCount}
         token={session.token}
+        ownerUsername={session.username}
         colors={colors}
       />
 

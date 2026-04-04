@@ -12,3 +12,6 @@ secugram-rn/ios/Pods/
 # Misc
 .DS_Store
 *.log
+
+# Local Netlify folder
+.netlify

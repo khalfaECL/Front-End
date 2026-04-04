@@ -6,15 +6,43 @@ export default function LoginPage() {
   const { login, register, demoLogin } = useAuth();
   const { colors } = useTheme();
   const [isRegister, setIsRegister] = useState(false);
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState('youssef');
   const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('12345');
+  const [confirm, setConfirm]   = useState('');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
+
+  const strength = (() => {
+    if (!password) return { score: 0, label: '', color: 'transparent' };
+    let score = 0;
+    if (password.length >= 8)             score++;
+    if (/[A-Z]/.test(password))           score++;
+    if (/[0-9]/.test(password))           score++;
+    if (/[^A-Za-z0-9]/.test(password))   score++;
+    const labels = ['', 'Faible', 'Moyen', 'Bon', 'Fort'];
+    const clrs   = ['transparent', '#FF453A', '#FF9F0A', '#30D158', '#30D158'];
+    return { score, label: labels[score], color: clrs[score] };
+  })();
+
+  const validateRegister = () => {
+    if (username.trim().length < 3)        return "L'identifiant doit contenir au moins 3 caractères.";
+    if (username.includes(' '))             return "L'identifiant ne peut pas contenir d'espaces.";
+    if (password.length < 8)               return 'Le mot de passe doit contenir au moins 8 caractères.';
+    if (!/[A-Z]/.test(password))           return 'Le mot de passe doit contenir au moins une majuscule.';
+    if (!/[0-9]/.test(password))           return 'Le mot de passe doit contenir au moins un chiffre.';
+    if (!/[^A-Za-z0-9]/.test(password))   return 'Le mot de passe doit contenir au moins un caractère spécial.';
+    if (password !== confirm)              return 'Les mots de passe ne correspondent pas.';
+    return null;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (isRegister) {
+      const err = validateRegister();
+      if (err) { setError(err); return; }
+    }
     setLoading(true);
     try {
       if (isRegister) {
@@ -122,7 +150,7 @@ export default function LoginPage() {
           )}
 
           {/* Password */}
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: isRegister ? 10 : 24 }}>
             <label style={labelStyle}>MOT DE PASSE</label>
             <input
               type="password"
@@ -133,7 +161,45 @@ export default function LoginPage() {
               autoComplete={isRegister ? 'new-password' : 'current-password'}
               style={inputStyle}
             />
+            {/* Indicateur de force */}
+            {isRegister && password.length > 0 && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {[1,2,3,4].map(i => (
+                  <div key={i} style={{
+                    flex: 1, height: 3, borderRadius: 2,
+                    backgroundColor: i <= strength.score ? strength.color : colors.border,
+                    transition: 'background-color 0.2s',
+                  }}/>
+                ))}
+                <span style={{ fontSize: 10, fontWeight: '700', color: strength.color, minWidth: 34 }}>
+                  {strength.label}
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Confirm password (register only) */}
+          {isRegister && (
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>CONFIRMER LE MOT DE PASSE</label>
+              <input
+                type="password"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                style={{
+                  ...inputStyle,
+                  borderColor: confirm && confirm !== password ? 'rgba(255,69,58,0.6)' : colors.border,
+                }}
+              />
+              {confirm && confirm !== password && (
+                <div style={{ fontSize: 11, color: colors.danger, marginTop: 5 }}>
+                  Les mots de passe ne correspondent pas.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Error */}
           {error && (
@@ -202,7 +268,7 @@ export default function LoginPage() {
             {isRegister ? 'Déjà un compte ?' : 'Pas encore inscrit ?'}
           </span>{' '}
           <button
-            onClick={() => { setIsRegister(r => !r); setError(''); }}
+            onClick={() => { setIsRegister(r => !r); setError(''); setConfirm(''); setPassword(''); }}
             style={{
               background: 'none',
               border: 'none',
